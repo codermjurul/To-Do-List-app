@@ -33,7 +33,7 @@ export const StreakCalendar: React.FC<StreakCalendarProps> = ({ completedDates }
   return (
     <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group">
       {/* Background glow effect */}
-      <div className="absolute top-0 right-0 w-64 h-64 bg-brand-accent/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+      <div className="absolute top-0 right-0 w-64 h-64 bg-brand-primary/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
 
       <div className="flex items-center justify-between mb-6 relative z-10">
         <div>
@@ -44,7 +44,7 @@ export const StreakCalendar: React.FC<StreakCalendarProps> = ({ completedDates }
         </div>
         
         <div className="flex items-center gap-2 bg-dark-900/50 px-4 py-2 rounded-full border border-dark-700/50 backdrop-blur-md">
-          <Flame className={`${currentStreak > 0 ? 'text-orange-500 fill-orange-500' : 'text-gray-600'} animate-pulse`} size={20} />
+          <Flame className={`${currentStreak > 0 ? 'text-brand-primary fill-brand-primary' : 'text-gray-600'} animate-pulse`} size={20} />
           <span className="font-bold text-white tabular-nums">{currentStreak} Day Streak</span>
         </div>
       </div>
@@ -57,7 +57,7 @@ export const StreakCalendar: React.FC<StreakCalendarProps> = ({ completedDates }
           
           return (
             <div key={index} className="flex flex-col items-center gap-3 flex-1">
-              <span className={`text-xs font-semibold uppercase tracking-wider ${isCurrentDay ? 'text-brand-accent' : 'text-gray-500'}`}>
+              <span className={`text-xs font-semibold uppercase tracking-wider ${isCurrentDay ? 'text-brand-primary' : 'text-gray-500'}`}>
                 {format(date, 'EEE')}
               </span>
               
@@ -65,16 +65,16 @@ export const StreakCalendar: React.FC<StreakCalendarProps> = ({ completedDates }
                 className={`
                   w-full h-14 rounded-xl flex items-center justify-center border transition-all duration-300 relative
                   ${active 
-                    ? 'bg-gradient-to-br from-brand-accent to-purple-600 border-transparent shadow-[0_0_15px_rgba(99,102,241,0.4)]' 
+                    ? 'bg-gradient-to-br from-brand-secondary to-green-600 border-transparent shadow-[0_0_15px_rgba(204,255,0,0.4)]' 
                     : isFutureDate
                       ? 'bg-dark-900/30 border-dark-700 opacity-50'
                       : 'bg-dark-900 border-dark-700'
                   }
-                  ${isCurrentDay && !active ? 'border-brand-accent border-dashed animate-pulse' : ''}
+                  ${isCurrentDay && !active ? 'border-brand-primary border-dashed animate-pulse' : ''}
                 `}
               >
                 {active && (
-                   <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <svg className="w-6 h-6 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                    </svg>
                 )}

@@ -21,8 +21,10 @@
                 700: '#2A303F', // Borders
               },
               brand: {
-                primary: '#6366f1',
-                glow: '#818cf8',
+                primary: '#CCFF00', // Neon Lime
+                secondary: '#A3E635', // Lime 400
+                glow: '#ECFCCB', // Lime 100
+                accent: '#84CC16', // Lime 600
               }
             }
           }
@@ -33,16 +35,16 @@
       body {
         background-color: #0B0E14;
         color: #E1E1E1;
-        /* Nebula Background Effect */
+        /* Green/Teal Nebula Background Effect */
         background-image: 
-          radial-gradient(circle at 15% 50%, rgba(76, 29, 149, 0.08), transparent 25%),
-          radial-gradient(circle at 85% 30%, rgba(56, 189, 248, 0.08), transparent 25%);
+          radial-gradient(circle at 15% 50%, rgba(204, 255, 0, 0.03), transparent 25%),
+          radial-gradient(circle at 85% 30%, rgba(20, 184, 166, 0.04), transparent 25%);
         background-attachment: fixed;
       }
       
       /* Glassmorphism Utilities */
       .glass-panel {
-        background: rgba(30, 35, 47, 0.4);
+        background: rgba(21, 25, 33, 0.6);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
         border: 1px solid rgba(255, 255, 255, 0.05);
@@ -83,5 +85,6 @@
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
