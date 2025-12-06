@@ -38,9 +38,14 @@ export default function App() {
   // App Settings State (Persisted in localStorage)
   const [appSettings, setAppSettings] = useState<AppSettings>(() => {
     const saved = localStorage.getItem('agency_hud_settings');
+    // Try to guess default timezone
+    const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    
     return saved ? JSON.parse(saved) : {
       appName: 'Quantix',
-      appSubtitle: 'Agency HUD'
+      appSubtitle: 'Agency HUD',
+      timezone: defaultTimezone,
+      customPlaylists: []
     };
   });
 
@@ -122,7 +127,7 @@ export default function App() {
     }
   };
 
-  const handleAddTask = async (title: string, durationMinutes?: number) => {
+  const handleAddTask = async (title: string, durationMinutes?: number, spotifyUri?: string) => {
     const tempId = crypto.randomUUID();
     const tempTask: Task = {
       id: tempId,
@@ -130,7 +135,8 @@ export default function App() {
       completed: false,
       isImportant: false,
       timestamp: Date.now(),
-      duration: durationMinutes
+      duration: durationMinutes,
+      spotifyUri: spotifyUri
     };
     setTasks(prev => [tempTask, ...prev]);
 
@@ -142,7 +148,8 @@ export default function App() {
         taskId: tempId,
         taskTitle: title,
         totalSeconds: durationMinutes * 60,
-        remainingSeconds: durationMinutes * 60
+        remainingSeconds: durationMinutes * 60,
+        spotifyUri: spotifyUri
       });
     }
 
@@ -232,9 +239,10 @@ export default function App() {
             onToggleComplete={handleToggleComplete}
             onToggleImportant={handleToggleImportant}
             onDeleteTask={handleDeleteTask}
+            customPlaylists={appSettings.customPlaylists}
           />
         )}
-        {currentView === 'streaks' && <StreaksView tasks={tasks} />}
+        {currentView === 'streaks' && <StreaksView tasks={tasks} timezone={appSettings.timezone} />}
         {currentView === 'journal' && <JournalView />}
         {currentView === 'settings' && (
           <SettingsView 

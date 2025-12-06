@@ -44,6 +44,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ? ((timerState.totalSeconds - timerState.remainingSeconds) / timerState.totalSeconds) * 100 
     : 0;
 
+  // Extract ID from URI (e.g., spotify:playlist:37i9dQZF1DXcBWIGoYBM5M -> 37i9dQZF1DXcBWIGoYBM5M)
+  const getSpotifyEmbedUrl = (uri: string) => {
+    if (!uri) return '';
+    const parts = uri.split(':');
+    const type = parts[1];
+    const id = parts[2];
+    // Added autoplay=1 to ensure music starts immediately
+    return `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0&autoplay=1`;
+  };
+
   return (
     <aside 
       className={`
@@ -128,6 +138,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                    style={{ width: `${progressPercent}%` }}
                  ></div>
               </div>
+
+              {/* Spotify Player Embed */}
+              {timerState.spotifyUri && (
+                <div className="mb-3 rounded-lg overflow-hidden border border-white/10 h-[80px]">
+                  <iframe 
+                    style={{ borderRadius: '12px' }} 
+                    src={getSpotifyEmbedUrl(timerState.spotifyUri)} 
+                    width="100%" 
+                    height="80" 
+                    frameBorder="0" 
+                    allowFullScreen 
+                    allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+                    loading="lazy"
+                  ></iframe>
+                </div>
+              )}
 
               <div className="flex gap-2 z-10 relative">
                  <button 

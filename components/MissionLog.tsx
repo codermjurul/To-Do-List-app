@@ -1,26 +1,38 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Check, Star, Trash2, Trophy, Clock } from 'lucide-react';
-import { Task } from '../types';
+import { Plus, Check, Star, Trash2, Trophy, Clock, Music } from 'lucide-react';
+import { Task, CustomPlaylist } from '../types';
 
 interface MissionLogProps {
   tasks: Task[];
-  onAddTask: (title: string, durationMinutes?: number) => void;
+  onAddTask: (title: string, durationMinutes?: number, spotifyUri?: string) => void;
   onToggleComplete: (id: string) => void;
   onToggleImportant: (id: string) => void;
   onDeleteTask: (id: string) => void;
+  customPlaylists?: CustomPlaylist[];
 }
 
 const DURATIONS = [5, 10, 20, 30, 40, 60, 120, 180];
+
+// Pre-defined high-quality playlists for productivity
+const DEFAULT_PLAYLISTS = [
+  { name: 'Deep Focus', uri: 'spotify:playlist:37i9dQZF1DWZeKCadgRdKQ', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+  { name: 'Techno Bunker', uri: 'spotify:playlist:37i9dQZF1DX6J5NfMJS675', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
+  { name: 'Brain Food', uri: 'spotify:playlist:37i9dQZF1DWXLeA8Omikj7', color: 'bg-pink-500/20 text-pink-400 border-pink-500/30' },
+  { name: 'Lofi Beats', uri: 'spotify:playlist:37i9dQZF1DWWQRwui0ExPn', color: 'bg-green-500/20 text-green-400 border-green-500/30' },
+  { name: 'Hans Zimmer', uri: 'spotify:playlist:37i9dQZF1DWVFJtzvDHN4L', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
+];
 
 export const MissionLog: React.FC<MissionLogProps> = ({ 
   tasks, 
   onAddTask, 
   onToggleComplete, 
   onToggleImportant,
-  onDeleteTask
+  onDeleteTask,
+  customPlaylists = []
 }) => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
+  const [selectedPlaylistUri, setSelectedPlaylistUri] = useState<string | null>(null);
 
   // Pre-load the sound
   const successAudio = useMemo(() => {
@@ -36,15 +48,29 @@ export const MissionLog: React.FC<MissionLogProps> = ({
   const totalPossibleXP = tasks.length * 10;
   const progressPercentage = totalPossibleXP > 0 ? (xpPoints / totalPossibleXP) * 100 : 0;
 
+  // Merge default and custom playlists
+  const allPlaylists = useMemo(() => {
+    const customFormatted = customPlaylists.map(cp => ({
+      name: cp.name,
+      uri: cp.uri,
+      color: 'bg-brand-primary/20 text-brand-primary border-brand-primary/30' // Custom ones get brand color
+    }));
+    return [...DEFAULT_PLAYLISTS, ...customFormatted];
+  }, [customPlaylists]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
     
-    onAddTask(newTaskTitle, selectedDuration || undefined);
+    // Smart Frictionless Logic: If user picked music but no time, default to 25m focus block
+    const finalDuration = selectedDuration || (selectedPlaylistUri ? 25 : undefined);
+
+    onAddTask(newTaskTitle, finalDuration, selectedPlaylistUri || undefined);
     
     // Reset
     setNewTaskTitle('');
     setSelectedDuration(null);
+    setSelectedPlaylistUri(null);
   };
 
   const handleTaskCheck = (id: string) => {
@@ -158,29 +184,58 @@ export const MissionLog: React.FC<MissionLogProps> = ({
                 />
               </div>
 
-              {/* Time Selector Chips */}
+              {/* Controls Container */}
               {newTaskTitle.length > 0 && (
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500 mr-2 shrink-0">
-                    <Clock size={12} />
-                    <span>Set Timer:</span>
+                <div className="flex flex-col gap-3 animate-fade-in">
+                  
+                  {/* Timer Selector */}
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500 mr-2 shrink-0">
+                      <Clock size={12} />
+                      <span>Timer:</span>
+                    </div>
+                    {DURATIONS.map(mins => (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => setSelectedDuration(selectedDuration === mins ? null : mins)}
+                        className={`
+                          px-3 py-1 rounded-full text-xs font-medium border transition-all shrink-0
+                          ${selectedDuration === mins 
+                            ? 'bg-brand-primary text-black border-brand-primary shadow-[0_0_10px_rgba(204,255,0,0.3)]' 
+                            : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-gray-200'
+                          }
+                        `}
+                      >
+                        {formatDurationChip(mins)}
+                      </button>
+                    ))}
                   </div>
-                  {DURATIONS.map(mins => (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => setSelectedDuration(selectedDuration === mins ? null : mins)}
-                      className={`
-                        px-3 py-1 rounded-full text-xs font-medium border transition-all shrink-0
-                        ${selectedDuration === mins 
-                          ? 'bg-brand-primary text-black border-brand-primary shadow-[0_0_10px_rgba(204,255,0,0.3)]' 
-                          : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-gray-200'
-                        }
-                      `}
-                    >
-                      {formatDurationChip(mins)}
-                    </button>
-                  ))}
+
+                  {/* Playlist Selector */}
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500 mr-2 shrink-0">
+                      <Music size={12} />
+                      <span>Soundtrack:</span>
+                    </div>
+                    {allPlaylists.map(playlist => (
+                      <button
+                        key={playlist.uri}
+                        type="button"
+                        onClick={() => setSelectedPlaylistUri(selectedPlaylistUri === playlist.uri ? null : playlist.uri)}
+                        className={`
+                          px-3 py-1 rounded-full text-xs font-medium border transition-all shrink-0 whitespace-nowrap
+                          ${selectedPlaylistUri === playlist.uri
+                            ? 'bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.3)]'
+                            : `bg-white/5 border-white/10 hover:bg-white/10 ${playlist.color.split(' ')[1]}`
+                          }
+                        `}
+                      >
+                        {playlist.name}
+                      </button>
+                    ))}
+                  </div>
+
                 </div>
               )}
             </form>
@@ -228,6 +283,11 @@ const TaskRow: React.FC<{
           {task.duration && !task.completed && (
              <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-primary/10 text-brand-primary border border-brand-primary/20 flex items-center gap-1">
                <Clock size={8} /> {task.duration}m
+             </span>
+          )}
+          {task.spotifyUri && !task.completed && (
+             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 flex items-center gap-1">
+               <Music size={8} /> OST
              </span>
           )}
         </div>

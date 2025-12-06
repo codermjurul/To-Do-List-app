@@ -8,6 +8,7 @@ export interface Task {
   category?: string;
   timestamp: number;
   duration?: number; // duration in minutes
+  spotifyUri?: string; // Spotify Playlist/Track URI
 }
 
 export interface ListGroup {
@@ -23,6 +24,7 @@ export interface TimerState {
   taskTitle: string;
   totalSeconds: number;
   remainingSeconds: number;
+  spotifyUri?: string;
 }
 
 export interface UserProfile {
@@ -33,7 +35,15 @@ export interface UserProfile {
   zoom: number; // For image cropping/adjustment
 }
 
+export interface CustomPlaylist {
+  id: string;
+  name: string;
+  uri: string;
+}
+
 export interface AppSettings {
   appName: string;
   appSubtitle: string;
+  timezone: string;
+  customPlaylists: CustomPlaylist[];
 }

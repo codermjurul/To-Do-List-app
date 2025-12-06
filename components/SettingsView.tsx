@@ -1,6 +1,6 @@
-import React, { useRef } from 'react';
-import { UserProfile, AppSettings } from '../types';
-import { Camera, Save, RefreshCw, ZoomIn } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { UserProfile, AppSettings, CustomPlaylist } from '../types';
+import { Camera, Save, RefreshCw, ZoomIn, Globe, Clock, Music, Plus, Trash2 } from 'lucide-react';
 
 interface SettingsViewProps {
   userProfile: UserProfile;
@@ -15,6 +15,20 @@ const GAMER_TAGS = [
   "Savage", "Ronin", "Executive", "Founder", "Beast"
 ];
 
+const TIMEZONES = [
+  "UTC",
+  "Asia/Dhaka",
+  "Asia/Kolkata",
+  "Asia/Tokyo",
+  "Asia/Dubai",
+  "Europe/London",
+  "Europe/Paris",
+  "America/New_York",
+  "America/Los_Angeles",
+  "America/Chicago",
+  "Australia/Sydney"
+];
+
 export const SettingsView: React.FC<SettingsViewProps> = ({
   userProfile,
   appSettings,
@@ -22,6 +36,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateAppSettings
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [newPlaylistUri, setNewPlaylistUri] = useState('');
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -32,6 +48,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleAddPlaylist = () => {
+    if (!newPlaylistName.trim() || !newPlaylistUri.trim()) return;
+    
+    // Basic validation for Spotify URI
+    if (!newPlaylistUri.includes('spotify:')) {
+      alert("Please enter a valid Spotify URI (e.g., spotify:playlist:...)");
+      return;
+    }
+
+    const newPlaylist: CustomPlaylist = {
+      id: crypto.randomUUID(),
+      name: newPlaylistName,
+      uri: newPlaylistUri
+    };
+
+    onUpdateAppSettings({
+      ...appSettings,
+      customPlaylists: [...(appSettings.customPlaylists || []), newPlaylist]
+    });
+
+    setNewPlaylistName('');
+    setNewPlaylistUri('');
+  };
+
+  const handleDeletePlaylist = (id: string) => {
+    onUpdateAppSettings({
+      ...appSettings,
+      customPlaylists: appSettings.customPlaylists.filter(p => p.id !== id)
+    });
   };
 
   return (
@@ -140,6 +187,99 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           {/* RIGHT COLUMN: System */}
           <div className="space-y-8">
+             
+             {/* Timezone Settings */}
+             <div className="glass-panel p-6 rounded-2xl border border-white/5">
+                <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                   <Globe size={18} className="text-brand-primary" />
+                   Regional Settings
+                </h2>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block flex items-center gap-2">
+                    <Clock size={12} /> Timezone
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={appSettings.timezone}
+                      onChange={(e) => onUpdateAppSettings({ ...appSettings, timezone: e.target.value })}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:border-brand-primary/50 focus:outline-none transition-colors"
+                    >
+                      {TIMEZONES.map(tz => (
+                        <option key={tz} value={tz} className="bg-dark-900 text-white">{tz}</option>
+                      ))}
+                    </select>
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-2">
+                    Used for streak calculations. Tasks completed today in your timezone count for today.
+                  </p>
+                </div>
+             </div>
+
+             {/* Custom Playlists Manager */}
+             <div className="glass-panel p-6 rounded-2xl border border-white/5">
+                <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                   <Music size={18} className="text-brand-primary" />
+                   Soundtrack Manager
+                </h2>
+                
+                <div className="space-y-4 mb-6">
+                   <div className="grid grid-cols-12 gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Playlist Name"
+                        value={newPlaylistName}
+                        onChange={(e) => setNewPlaylistName(e.target.value)}
+                        className="col-span-5 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-brand-primary/50 focus:outline-none"
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Spotify URI (spotify:playlist:...)"
+                        value={newPlaylistUri}
+                        onChange={(e) => setNewPlaylistUri(e.target.value)}
+                        className="col-span-5 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-brand-primary/50 focus:outline-none"
+                      />
+                      <button 
+                        onClick={handleAddPlaylist}
+                        disabled={!newPlaylistName || !newPlaylistUri}
+                        className="col-span-2 bg-brand-primary hover:bg-brand-secondary text-black rounded-xl flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Plus size={18} />
+                      </button>
+                   </div>
+                   <p className="text-[10px] text-gray-500">
+                     Right-click a playlist in Spotify → Share → Copy Spotify URI
+                   </p>
+                </div>
+
+                <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                   {appSettings.customPlaylists?.map(playlist => (
+                     <div key={playlist.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
+                        <div className="flex items-center gap-3 overflow-hidden">
+                           <Music size={14} className="text-gray-400 shrink-0" />
+                           <div className="truncate">
+                              <p className="text-sm font-medium text-white truncate">{playlist.name}</p>
+                              <p className="text-[10px] text-gray-600 truncate">{playlist.uri}</p>
+                           </div>
+                        </div>
+                        <button 
+                          onClick={() => handleDeletePlaylist(playlist.id)}
+                          className="text-gray-600 hover:text-red-400 p-1.5 hover:bg-white/10 rounded-md transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                     </div>
+                   ))}
+                   {(!appSettings.customPlaylists || appSettings.customPlaylists.length === 0) && (
+                      <p className="text-center text-xs text-gray-600 py-2 italic">No custom playlists added yet.</p>
+                   )}
+                </div>
+             </div>
+
              <div className="glass-panel p-6 rounded-2xl border border-white/5">
               <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
                 <RefreshCw size={18} className="text-brand-primary" />
@@ -178,20 +318,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                    <h3 className="text-white font-bold leading-none">{appSettings.appName}</h3>
                    <p className="text-xs text-gray-500 font-medium mt-0.5">{appSettings.appSubtitle}</p>
                  </div>
-              </div>
-            </div>
-
-            <div className="p-6 rounded-2xl border border-brand-primary/20 bg-brand-primary/5">
-              <div className="flex items-start gap-4">
-                <div className="p-2 bg-brand-primary/10 rounded-lg">
-                   <Save size={24} className="text-brand-primary" />
-                </div>
-                <div>
-                  <h3 className="text-brand-primary font-bold mb-1">Auto-Save Enabled</h3>
-                  <p className="text-xs text-gray-400 leading-relaxed">
-                    All changes to your profile and HUD configuration are automatically saved to your local terminal (Local Storage).
-                  </p>
-                </div>
               </div>
             </div>
           </div>

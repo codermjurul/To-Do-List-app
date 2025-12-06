@@ -26,6 +26,20 @@
                 glow: '#ECFCCB', // Lime 100
                 accent: '#84CC16', // Lime 600
               }
+            },
+            animation: {
+              'fire': 'fire 2s ease-in-out infinite',
+              'fire-inner': 'fire 1.5s ease-in-out infinite reverse',
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            },
+            keyframes: {
+              fire: {
+                '0%': { transform: 'scale(1) rotate(0deg)' },
+                '25%': { transform: 'scale(1.05) rotate(-2deg)' },
+                '50%': { transform: 'scale(1.1) rotate(2deg) translateY(-4px)' },
+                '75%': { transform: 'scale(1.05) rotate(-1deg)' },
+                '100%': { transform: 'scale(1) rotate(0deg)' },
+              }
             }
           }
         }
