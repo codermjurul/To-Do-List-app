@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Check, Star, Trash2, Trophy, Clock, Music } from 'lucide-react';
-import { Task, CustomPlaylist } from '../types';
+import { Plus, Check, Trash2, Trophy, Clock, Music } from 'lucide-react';
+import { Task, CustomPlaylist, TimerState } from '../types';
 
 interface MissionLogProps {
   tasks: Task[];
+  timerState: TimerState;
   onAddTask: (title: string, durationMinutes?: number, spotifyUri?: string) => void;
   onToggleComplete: (id: string) => void;
   onToggleImportant: (id: string) => void;
@@ -22,11 +23,69 @@ const DEFAULT_PLAYLISTS = [
   { name: 'Hans Zimmer', uri: 'spotify:playlist:37i9dQZF1DWVFJtzvDHN4L', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
 ];
 
+// Circular Progress Component
+const CircularProgress = ({ percentage, isCompleted, isActive }: { percentage: number, isCompleted: boolean, isActive: boolean }) => {
+  const radius = 14; 
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+
+  return (
+    <div className="relative flex items-center justify-center">
+      {/* Glow Container - Pulses when active */}
+      <div className={`absolute inset-0 rounded-full blur-md transition-all duration-500 ${
+        isCompleted ? 'bg-brand-primary/20' : 
+        isActive ? 'bg-brand-primary/30 animate-pulse' : 
+        percentage > 0 ? 'bg-brand-primary/10' : 'bg-transparent'
+      }`}></div>
+      
+      <svg width="36" height="36" className={`transform -rotate-90 relative z-10 transition-transform duration-500 ${isActive ? 'scale-105' : ''}`}>
+        {/* Track */}
+        <circle
+          cx="18"
+          cy="18"
+          r={radius}
+          stroke="currentColor"
+          strokeWidth="3"
+          fill="transparent"
+          className="text-white/5"
+        />
+        {/* Progress */}
+        <circle
+          cx="18"
+          cy="18"
+          r={radius}
+          stroke="currentColor"
+          strokeWidth="3"
+          fill="transparent"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          // duration-1000 ease-linear interpolates the 1-second updates into a continuous motion
+          className={`transition-all duration-1000 ease-linear ${isCompleted ? 'text-brand-primary' : 'text-brand-primary'}`}
+        />
+      </svg>
+      
+      {/* Inner Indicator */}
+      <div className="absolute inset-0 flex items-center justify-center z-20">
+         {isCompleted ? (
+             <div className="w-2 h-2 bg-brand-primary rounded-full shadow-[0_0_5px_currentColor]"></div>
+         ) : isActive ? (
+             <div className="w-1.5 h-1.5 bg-brand-primary rounded-full animate-pulse shadow-[0_0_5px_currentColor]"></div>
+         ) : percentage > 0 ? (
+             <div className="text-[8px] font-bold text-brand-primary tabular-nums">{Math.round(percentage)}%</div>
+         ) : (
+             <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
+         )}
+      </div>
+    </div>
+  );
+};
+
 export const MissionLog: React.FC<MissionLogProps> = ({ 
   tasks, 
+  timerState,
   onAddTask, 
   onToggleComplete, 
-  onToggleImportant,
   onDeleteTask,
   customPlaylists = []
 }) => {
@@ -53,7 +112,7 @@ export const MissionLog: React.FC<MissionLogProps> = ({
     const customFormatted = customPlaylists.map(cp => ({
       name: cp.name,
       uri: cp.uri,
-      color: 'bg-brand-primary/20 text-brand-primary border-brand-primary/30' // Custom ones get brand color
+      color: 'bg-brand-primary/20 text-brand-primary border-brand-primary/30'
     }));
     return [...DEFAULT_PLAYLISTS, ...customFormatted];
   }, [customPlaylists]);
@@ -125,10 +184,8 @@ export const MissionLog: React.FC<MissionLogProps> = ({
           
           {/* List Header */}
           <div className="grid grid-cols-12 gap-4 px-6 py-4 border-b border-white/5 bg-white/[0.02] text-xs font-medium text-gray-500 uppercase tracking-wider">
-            <div className="col-span-1 text-center">Status</div>
-            <div className="col-span-8">Task Name</div>
-            <div className="col-span-2 text-right">Priority</div>
-            <div className="col-span-1 text-right">Action</div>
+            <div className="col-span-10">Task Name</div>
+            <div className="col-span-2 text-right">Status</div>
           </div>
 
           {/* List Body */}
@@ -137,8 +194,8 @@ export const MissionLog: React.FC<MissionLogProps> = ({
               <TaskRow 
                 key={task.id} 
                 task={task} 
+                timerState={timerState}
                 onToggleComplete={handleTaskCheck} 
-                onToggleImportant={onToggleImportant}
                 onDeleteTask={onDeleteTask}
               />
             ))}
@@ -163,8 +220,8 @@ export const MissionLog: React.FC<MissionLogProps> = ({
               <TaskRow 
                 key={task.id} 
                 task={task} 
+                timerState={timerState}
                 onToggleComplete={handleTaskCheck} 
-                onToggleImportant={onToggleImportant}
                 onDeleteTask={onDeleteTask}
               />
             ))}
@@ -249,10 +306,19 @@ export const MissionLog: React.FC<MissionLogProps> = ({
 
 const TaskRow: React.FC<{ 
   task: Task; 
+  timerState: TimerState;
   onToggleComplete: (id: string) => void; 
-  onToggleImportant: (id: string) => void;
   onDeleteTask: (id: string) => void;
-}> = ({ task, onToggleComplete, onToggleImportant, onDeleteTask }) => {
+}> = ({ task, timerState, onToggleComplete, onDeleteTask }) => {
+  const isRunning = timerState.taskId === task.id;
+  
+  let progress = 0;
+  if (task.completed) {
+    progress = 100;
+  } else if (isRunning && timerState.totalSeconds > 0) {
+    progress = ((timerState.totalSeconds - timerState.remainingSeconds) / timerState.totalSeconds) * 100;
+  }
+
   return (
     <div 
       className={`
@@ -260,11 +326,12 @@ const TaskRow: React.FC<{
         ${task.completed ? 'opacity-50 hover:opacity-80 bg-black/20' : 'hover:bg-white/5 hover:border-white/5'}
       `}
     >
-      <div className="col-span-1 flex justify-center">
+      <div className="col-span-10 flex items-center gap-4">
+        {/* Checkbox */}
         <button 
           onClick={() => onToggleComplete(task.id)}
           className={`
-            w-5 h-5 rounded-full border flex items-center justify-center transition-all duration-300
+            shrink-0 w-5 h-5 rounded-full border flex items-center justify-center transition-all duration-300
             ${task.completed 
               ? 'bg-brand-primary border-brand-primary text-black shadow-[0_0_10px_rgba(204,255,0,0.4)]' 
               : 'border-gray-600 hover:border-gray-400 group-hover:bg-white/5'
@@ -273,42 +340,37 @@ const TaskRow: React.FC<{
         >
           {task.completed && <Check size={12} strokeWidth={3} />}
         </button>
-      </div>
 
-      <div className="col-span-8 flex flex-col justify-center">
-        <div className="flex items-center gap-2">
-          <span className={`text-sm font-medium transition-colors ${task.completed ? 'text-gray-500 line-through' : 'text-gray-200 group-hover:text-white'}`}>
-            {task.title}
-          </span>
-          {task.duration && !task.completed && (
-             <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-primary/10 text-brand-primary border border-brand-primary/20 flex items-center gap-1">
-               <Clock size={8} /> {task.duration}m
-             </span>
-          )}
-          {task.spotifyUri && !task.completed && (
-             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 flex items-center gap-1">
-               <Music size={8} /> OST
+        {/* Task Details */}
+        <div className="flex flex-col justify-center overflow-hidden">
+          <div className="flex items-center gap-2">
+            <span className={`text-sm font-medium transition-colors truncate ${task.completed ? 'text-gray-500 line-through' : 'text-gray-200 group-hover:text-white'}`}>
+              {task.title}
+            </span>
+            {task.duration && !task.completed && (
+               <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-primary/10 text-brand-primary border border-brand-primary/20 flex items-center gap-1 shrink-0">
+                 <Clock size={8} /> {task.duration}m
+               </span>
+            )}
+            {task.spotifyUri && !task.completed && (
+               <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 flex items-center gap-1 shrink-0">
+                 <Music size={8} /> OST
+               </span>
+            )}
+          </div>
+          {!task.completed && (
+             <span className="text-[10px] text-gray-500 mt-0.5">
+               {new Date(task.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
              </span>
           )}
         </div>
-        {!task.completed && (
-           <span className="text-[10px] text-gray-500 mt-0.5">
-             {new Date(task.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-           </span>
-        )}
       </div>
 
-      <div className="col-span-2 flex justify-end">
+      {/* Status Column: Progress + Delete */}
+      <div className="col-span-2 flex justify-end items-center gap-3">
+         <CircularProgress percentage={progress} isCompleted={task.completed} isActive={isRunning} />
+         
          <button 
-            onClick={() => onToggleImportant(task.id)}
-            className={`transition-all duration-300 transform active:scale-90 ${task.isImportant ? 'text-brand-primary' : 'text-gray-600 hover:text-gray-400 opacity-0 group-hover:opacity-100'}`}
-         >
-           <Star size={16} fill={task.isImportant ? "currentColor" : "none"} />
-         </button>
-      </div>
-
-      <div className="col-span-1 flex justify-end">
-        <button 
           onClick={() => onDeleteTask(task.id)}
           className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1.5 hover:bg-white/5 rounded-lg"
           title="Delete task"

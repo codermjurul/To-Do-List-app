@@ -235,6 +235,7 @@ export default function App() {
         {currentView === 'tasks' && (
           <MissionLog 
             tasks={tasks} 
+            timerState={timerState}
             onAddTask={handleAddTask}
             onToggleComplete={handleToggleComplete}
             onToggleImportant={handleToggleImportant}
