@@ -8,7 +8,8 @@ import {
   startOfWeek,
   endOfWeek,
   addMonths,
-  subMonths
+  subMonths,
+  subDays
 } from 'date-fns';
 import { Task } from '../types';
 
@@ -20,49 +21,60 @@ interface StreaksViewProps {
 export const StreaksView: React.FC<StreaksViewProps> = ({ tasks, timezone }) => {
   const [viewDate, setViewDate] = useState(new Date());
 
-  // Helper: Format a timestamp to YYYY-MM-DD in the user's specific timezone.
-  // This ensures we group tasks by the user's local "day", not UTC.
-  const getDateStringInTimezone = (timestamp: number | Date) => {
-    return new Date(timestamp).toLocaleDateString('en-CA', { timeZone: timezone }); // en-CA outputs YYYY-MM-DD
+  // Helper: Format a date object to 'YYYY-MM-DD' in the user's specific timezone.
+  // This is crucial for consistent grouping regardless of the browser's local time.
+  const getDateStringInTimezone = (date: Date) => {
+    return new Intl.DateTimeFormat('en-CA', { 
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(date);
   };
 
-  // 1. Calculate Active Dates (Dates where at least one task was completed)
-  // Logic: Map all completed tasks to their YYYY-MM-DD string in the target timezone.
+  // 1. Calculate Active Dates (Set of 'YYYY-MM-DD' strings)
   const completedDateStrings = useMemo(() => {
     const dates = new Set<string>();
     tasks.filter(t => t.completed).forEach(t => {
-      dates.add(getDateStringInTimezone(t.timestamp));
+      dates.add(getDateStringInTimezone(new Date(t.timestamp)));
     });
     return dates;
   }, [tasks, timezone]);
 
-  // 2. Calculate Current Streak
+  // 2. Calculate Current Streak (Enhanced Logic)
   const streakCount = useMemo(() => {
+    const now = new Date();
+    const todayStr = getDateStringInTimezone(now);
+    
+    // Check Yesterday in the specific timezone (safer than simple subtract for edge cases)
+    const yesterday = subDays(now, 1);
+    const yesterdayStr = getDateStringInTimezone(yesterday);
+
+    let currentCheckDate: Date;
     let streak = 0;
-    
-    // Determine "Today" in the target timezone
-    const todayStr = getDateStringInTimezone(new Date());
 
-    // Check if today is done
-    const isTodayDone = completedDateStrings.has(todayStr);
+    // Determine start point for streak calculation
+    if (completedDateStrings.has(todayStr)) {
+      // User did a task today -> Streak is active ending today
+      currentCheckDate = now;
+    } else if (completedDateStrings.has(yesterdayStr)) {
+      // User hasn't done task today, but did yesterday -> Streak is held ending yesterday
+      currentCheckDate = yesterday;
+    } else {
+      // User missed yesterday and today -> Streak broken
+      return 0;
+    }
 
-    // If today is done, start count at 1.
-    if (isTodayDone) streak++;
-
-    // Iterate backwards
-    let checkDate = new Date();
-    // Move back 1 day to start checking yesterday
-    checkDate.setDate(checkDate.getDate() - 1);
-    
+    // Count backwards consecutively
     let keepGoing = true;
     while (keepGoing) {
-      const dateStr = getDateStringInTimezone(checkDate);
+      const dateStr = getDateStringInTimezone(currentCheckDate);
+      
       if (completedDateStrings.has(dateStr)) {
         streak++;
-        checkDate.setDate(checkDate.getDate() - 1);
+        // Move to previous day
+        currentCheckDate = subDays(currentCheckDate, 1);
       } else {
-        // Streak breaks if yesterday is missing (and we haven't just counted today)
-        // Note: Logic implies a simplified streak (consecutive days). 
         keepGoing = false;
       }
     }

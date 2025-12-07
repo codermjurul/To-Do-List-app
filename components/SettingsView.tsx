@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { UserProfile, AppSettings, CustomPlaylist } from '../types';
-import { Camera, Save, RefreshCw, ZoomIn, Globe, Clock, Music, Plus, Trash2 } from 'lucide-react';
+import { Camera, Save, RefreshCw, ZoomIn, Globe, Clock, Music, Plus, Trash2, Users, Sparkles } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
 
 interface SettingsViewProps {
   userProfile: UserProfile;
@@ -29,6 +30,33 @@ const TIMEZONES = [
   "Australia/Sydney"
 ];
 
+const AVATAR_LIBRARY = [
+  // Robots & Mechs
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Glitch",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Cyber",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Apex",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Legend",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Nana",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Zane",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Omega",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Prime",
+  
+  // Abstract / Gaming / Sports
+  "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&auto=format&fit=crop&q=60", // Joystick
+  "https://images.unsplash.com/photo-1552820728-8b83bb6b773f?w=400&auto=format&fit=crop&q=60", // Gaming setup
+  "https://images.unsplash.com/photo-1614728853913-1e2221eb31a3?w=400&auto=format&fit=crop&q=60", // Neon Mask
+  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&auto=format&fit=crop&q=60", // Abstract
+  "https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=400&auto=format&fit=crop&q=60", // Football
+  "https://images.unsplash.com/photo-1519861531473-920026393112?w=400&auto=format&fit=crop&q=60", // Basketball
+  "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&auto=format&fit=crop&q=60", // Gaming Controller
+  
+  // Stylized / Emoji
+  "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Spooky",
+  "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Mario",
+  "https://api.dicebear.com/7.x/thumbs/svg?seed=Rock",
+  "https://api.dicebear.com/7.x/thumbs/svg?seed=Sky",
+];
+
 export const SettingsView: React.FC<SettingsViewProps> = ({
   userProfile,
   appSettings,
@@ -39,6 +67,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [newPlaylistUri, setNewPlaylistUri] = useState('');
 
+  // AI Generation State
+  const [genPrompt, setGenPrompt] = useState('High quality Batman logo, cinematic lighting, 8k resolution');
+  const [genSize, setGenSize] = useState<'1K' | '2K' | '4K'>('1K');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -47,6 +81,65 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         onUpdateProfile({ ...userProfile, avatarUrl: reader.result as string });
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleGenerateAvatar = async () => {
+    if (!genPrompt.trim()) return;
+    setIsGenerating(true);
+    setGeneratedImage(null);
+
+    try {
+      // @ts-ignore
+      if (typeof window !== 'undefined' && window.aistudio && !await window.aistudio.hasSelectedApiKey()) {
+        // @ts-ignore
+        await window.aistudio.openSelectKey();
+      }
+
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-image-preview',
+        contents: { parts: [{ text: genPrompt }] },
+        config: {
+          imageConfig: {
+            imageSize: genSize,
+            aspectRatio: "1:1"
+          }
+        }
+      });
+
+      if (response.candidates?.[0]?.content?.parts) {
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData) {
+            setGeneratedImage(`data:image/png;base64,${part.inlineData.data}`);
+            break;
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error(e);
+      const errorMessage = e.message || e.toString();
+      // Handle missing key (Entity not found) or permission errors (403)
+      if (
+        errorMessage.includes("Requested entity was not found") || 
+        errorMessage.includes("permission") || 
+        errorMessage.includes("403") ||
+        e.status === 403
+      ) {
+        // @ts-ignore
+        if (typeof window !== 'undefined' && window.aistudio) {
+             await window.aistudio.openSelectKey();
+        }
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const applyGeneratedAvatar = () => {
+    if (generatedImage) {
+      onUpdateProfile({ ...userProfile, avatarUrl: generatedImage, zoom: 1 });
+      setGeneratedImage(null);
     }
   };
 
@@ -146,8 +239,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   />
                 </div>
 
-                {/* Name Input */}
-                <div className="w-full space-y-4">
+                {/* Name & Avatar Library Input */}
+                <div className="w-full space-y-6">
                   <div>
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Codename (Name)</label>
                     <input 
@@ -156,6 +249,86 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       onChange={(e) => onUpdateProfile({ ...userProfile, name: e.target.value })}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-brand-primary/50 focus:outline-none transition-colors"
                     />
+                  </div>
+
+                  {/* Avatar Library Grid */}
+                  <div>
+                     <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block flex items-center gap-2">
+                        <Users size={12} /> Quick Select Avatar
+                     </label>
+                     <div className="grid grid-cols-5 gap-2">
+                        {AVATAR_LIBRARY.map((url, index) => (
+                           <button
+                              key={index}
+                              onClick={() => onUpdateProfile({ ...userProfile, avatarUrl: url })}
+                              className={`
+                                 relative aspect-square rounded-lg overflow-hidden border-2 transition-all cursor-pointer
+                                 ${userProfile.avatarUrl === url 
+                                    ? 'border-brand-primary shadow-[0_0_10px_rgba(204,255,0,0.4)] scale-105 z-10' 
+                                    : 'border-transparent opacity-50 hover:opacity-100 hover:border-white/20'
+                                 }
+                              `}
+                              title="Select Avatar"
+                           >
+                              <img src={url} alt={`Avatar ${index}`} className="w-full h-full object-cover" />
+                           </button>
+                        ))}
+                     </div>
+                  </div>
+
+                  {/* AI Generation Section */}
+                  <div className="mt-6 pt-6 border-t border-white/5">
+                      <label className="text-xs font-bold text-brand-primary uppercase tracking-wider mb-3 flex items-center gap-2">
+                          <Sparkles size={14} /> 
+                          AI Avatar Studio
+                      </label>
+                      
+                      <div className="space-y-3">
+                          <textarea
+                              value={genPrompt}
+                              onChange={(e) => setGenPrompt(e.target.value)}
+                              placeholder="Describe your ideal avatar..."
+                              className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-brand-primary/50 focus:outline-none min-h-[80px] resize-none"
+                          />
+                          
+                          <div className="flex items-center gap-2">
+                              <select
+                                  value={genSize}
+                                  onChange={(e) => setGenSize(e.target.value as any)}
+                                  className="bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-xs text-white focus:border-brand-primary/50 outline-none"
+                              >
+                                  <option value="1K">1K</option>
+                                  <option value="2K">2K</option>
+                                  <option value="4K">4K</option>
+                              </select>
+                              
+                              <button
+                                  onClick={handleGenerateAvatar}
+                                  disabled={isGenerating}
+                                  className="flex-1 bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary border border-brand-primary/30 rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                              >
+                                  {isGenerating ? (
+                                      <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                                  ) : (
+                                      <Sparkles size={14} />
+                                  )}
+                                  {isGenerating ? 'Generating...' : 'Generate New'}
+                              </button>
+                          </div>
+
+                          {generatedImage && (
+                              <div className="mt-3 p-3 bg-brand-primary/5 rounded-xl border border-brand-primary/20 flex items-center gap-4 animate-fade-in">
+                                  <img src={generatedImage} alt="Generated" className="w-14 h-14 rounded-full object-cover border border-brand-primary/30" />
+                                  <div className="flex-1">
+                                      <p className="text-[10px] text-brand-primary font-bold uppercase mb-1">Generation Complete</p>
+                                      <div className="flex gap-2">
+                                          <button onClick={applyGeneratedAvatar} className="flex-1 bg-brand-primary text-black text-[10px] font-bold py-1.5 rounded hover:bg-brand-secondary transition-colors">Apply</button>
+                                          <button onClick={() => setGeneratedImage(null)} className="flex-1 bg-white/10 text-white text-[10px] font-bold py-1.5 rounded hover:bg-white/20 transition-colors">Discard</button>
+                                      </div>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
                   </div>
                 </div>
               </div>

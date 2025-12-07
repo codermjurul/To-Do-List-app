@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { 
   CheckSquare, 
   Flame, 
@@ -9,8 +10,10 @@ import {
   Timer,
   Pause,
   Play,
-  Square
+  Square,
+  BarChart2
 } from 'lucide-react';
+import { format } from 'date-fns';
 import { ViewType, TimerState, UserProfile, AppSettings } from '../types';
 
 interface SidebarProps {
@@ -33,6 +36,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   appSettings
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDate(new Date());
+    }, 60000); // Update every minute
+    return () => clearInterval(timer);
+  }, []);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -44,13 +55,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ? ((timerState.totalSeconds - timerState.remainingSeconds) / timerState.totalSeconds) * 100 
     : 0;
 
-  // Extract ID from URI (e.g., spotify:playlist:37i9dQZF1DXcBWIGoYBM5M -> 37i9dQZF1DXcBWIGoYBM5M)
+  // Extract ID from URI and add autoplay
   const getSpotifyEmbedUrl = (uri: string) => {
     if (!uri) return '';
     const parts = uri.split(':');
     const type = parts[1];
     const id = parts[2];
-    // Added autoplay=1 to ensure music starts immediately
     return `https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0&autoplay=1`;
   };
 
@@ -58,39 +68,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside 
       className={`
         flex flex-col h-full border-r border-white/5 bg-[#0B0E14]/50 backdrop-blur-xl relative z-20 transition-all duration-300 ease-in-out
-        ${isCollapsed ? 'w-[80px]' : 'w-[300px]'}
+        ${isCollapsed ? 'w-[80px]' : 'w-[320px]'}
       `}
     >
-      {/* Top Header Section */}
-      <div className={`p-6 ${isCollapsed ? 'px-4' : 'px-6'}`}>
-        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} mb-8`}>
+      {/* Top Header Section - Date/Time */}
+      <div className={`pt-8 px-6 pb-2 ${isCollapsed ? 'px-4' : 'px-6'}`}>
+        <div className={`flex flex-col ${isCollapsed ? 'items-center' : 'items-start'} mb-10`}>
           {!isCollapsed && (
-            <div className="flex items-center gap-3">
-               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-primary to-lime-600 flex items-center justify-center shadow-[0_0_15px_rgba(204,255,0,0.3)]">
-                 <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-black" stroke="currentColor" strokeWidth="2.5">
-                   <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                 </svg>
-               </div>
-               <div className="overflow-hidden whitespace-nowrap">
-                 <h1 className="text-white font-bold text-base leading-none tracking-tight">{appSettings.appName}</h1>
-                 <span className="text-xs text-gray-500 font-medium">{appSettings.appSubtitle}</span>
-               </div>
-            </div>
+             <>
+               <h1 className="text-5xl font-black text-white tracking-tighter leading-none mb-1">
+                  {format(currentDate, 'h:mm a')}
+               </h1>
+               <p className="text-gray-500 font-bold uppercase tracking-widest text-xs ml-1">
+                  {format(currentDate, 'do MMMM')}
+               </p>
+             </>
           )}
-          
-          <button 
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className={`
-              w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-colors
-              ${isCollapsed ? 'mx-auto' : ''}
-            `}
-          >
-            {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
         </div>
 
         {/* User Profile Section */}
-        <div className={`mb-8 flex flex-col gap-4 transition-all duration-300 ${isCollapsed ? 'items-center' : ''}`}>
+        <div className={`mb-8 flex flex-col gap-4 transition-all duration-300 ${isCollapsed ? 'items-center' : ''} ${!isCollapsed ? 'mt-4' : ''}`}>
           <div className="flex items-center gap-4">
             <div className="relative group cursor-pointer" onClick={() => onViewChange('settings')}>
               {/* Dynamic Avatar with Zoom */}
@@ -180,18 +177,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Navigation Menu */}
         <nav className="space-y-2">
-          {!isCollapsed && <p className="px-4 text-xs font-medium text-gray-500 mb-2 uppercase tracking-wider">Overview</p>}
+          {!isCollapsed && <p className="px-4 text-xs font-bold text-gray-600 mb-2 uppercase tracking-widest">Overview</p>}
           
           <NavItem 
-            icon={<CheckSquare size={20} />} 
-            label="Tasks" 
+            icon={<CheckSquare size={18} />} 
+            label="To Do" 
             isActive={currentView === 'tasks'} 
             onClick={() => onViewChange('tasks')}
             isCollapsed={isCollapsed}
           />
+
+          <NavItem 
+            icon={<BarChart2 size={18} />} 
+            label="Progress" 
+            isActive={currentView === 'progress'} 
+            onClick={() => onViewChange('progress')}
+            isCollapsed={isCollapsed}
+          />
           
           <NavItem 
-            icon={<Flame size={20} />} 
+            icon={<Flame size={18} />} 
             label="Streaks" 
             isActive={currentView === 'streaks'} 
             onClick={() => onViewChange('streaks')}
@@ -199,7 +204,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           />
           
           <NavItem 
-            icon={<Book size={20} />} 
+            icon={<Book size={18} />} 
             label="Journal" 
             isActive={currentView === 'journal'} 
             onClick={() => onViewChange('journal')}
@@ -208,14 +213,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      <div className={`mt-auto p-6 ${isCollapsed ? 'px-2' : ''}`}>
+      <div className={`mt-auto p-6 ${isCollapsed ? 'px-2 flex flex-col items-center gap-4' : 'flex items-center justify-between'}`}>
+         {/* Settings Button - Aligned with NavItems */}
          <div 
            onClick={() => onViewChange('settings')}
-           className={`flex items-center gap-3 text-gray-400 hover:text-white cursor-pointer transition-colors ${isCollapsed ? 'justify-center p-2' : 'px-4 py-2'} ${currentView === 'settings' ? 'text-brand-primary' : ''}`}
+           className={`
+             group flex items-center gap-3 rounded-xl cursor-pointer transition-all duration-300
+             ${isCollapsed ? 'justify-center p-2' : 'px-4 py-3'}
+             ${currentView === 'settings' ? 'text-brand-primary' : 'text-gray-400 hover:text-white hover:bg-white/5'}
+           `}
          >
-            <Settings size={18} />
-            {!isCollapsed && <span className="text-sm">Settings</span>}
+            <Settings size={18} className={`${currentView === 'settings' ? 'text-brand-primary' : 'group-hover:text-white'}`} />
+            {!isCollapsed && <span className="text-sm font-medium tracking-wide">Settings</span>}
          </div>
+
+         <button 
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className={`
+              w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-colors
+              ${isCollapsed ? '' : ''}
+            `}
+          >
+            {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
       </div>
     </aside>
   );
@@ -235,7 +255,7 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, onClick, isCol
       onClick={onClick}
       className={`
         relative group flex items-center gap-3 rounded-xl cursor-pointer transition-all duration-300
-        ${isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3.5'}
+        ${isCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'}
         ${isActive 
           ? 'bg-gradient-to-r from-white/10 to-transparent border border-white/10 text-white shadow-lg shadow-black/20' 
           : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
@@ -250,10 +270,10 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, isActive, onClick, isCol
       
       {/* Sidebar Accent Bar */}
       {isActive && (
-        <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 bg-brand-primary rounded-r-full shadow-[0_0_10px_rgba(204,255,0,0.6)] ${isCollapsed ? 'h-4 left-0' : 'h-8'}`}></div>
+        <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 bg-brand-primary rounded-r-full shadow-[0_0_10px_rgba(204,255,0,0.6)] ${isCollapsed ? 'h-3 left-0' : 'h-6'}`}></div>
       )}
 
-      <span className={`relative z-10 transition-transform duration-300 ${isActive ? 'scale-110 text-brand-primary' : 'group-hover:scale-110'}`}>
+      <span className={`relative z-10 transition-transform duration-300 ${isActive ? 'scale-100 text-brand-primary' : 'group-hover:scale-110'}`}>
         {icon}
       </span>
       

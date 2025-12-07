@@ -1,4 +1,5 @@
-export type ViewType = 'tasks' | 'streaks' | 'journal' | 'settings';
+
+export type ViewType = 'tasks' | 'progress' | 'streaks' | 'journal' | 'settings';
 
 export interface Task {
   id: string;

@@ -1,12 +1,24 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { MissionLog } from './components/MissionLog';
 import { StreaksView } from './components/StreaksView';
 import { JournalView } from './components/JournalView';
 import { SettingsView } from './components/SettingsView';
+import { ProgressView } from './components/ProgressView';
 import { Task, ViewType, TimerState, UserProfile, AppSettings } from './types';
 import { supabase } from './lib/supabase';
 import { AlertTriangle } from 'lucide-react';
+
+// Helper to get or create a stable ID for this device/browser for simple persistence without auth
+const getDeviceId = () => {
+  let id = localStorage.getItem('agency_hud_device_id');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('agency_hud_device_id', id);
+  }
+  return id;
+};
 
 export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -28,7 +40,7 @@ export default function App() {
     const saved = localStorage.getItem('agency_hud_profile');
     return saved ? JSON.parse(saved) : {
       name: 'Manjarul',
-      avatarUrl: 'https://upload.wikimedia.org/wikipedia/en/9/9f/Arthur_Morgan_-_Red_Dead_Redemption_2.png',
+      avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=Prime',
       gamerTag: 'OUTLAW',
       level: 32,
       zoom: 1
@@ -51,9 +63,65 @@ export default function App() {
 
   const timerRef = useRef<number | null>(null);
 
-  // Persistence Effects
+  // Load Profile from Supabase on mount
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!supabase) return;
+      const deviceId = getDeviceId();
+      
+      try {
+        // Attempt to fetch profile for this device
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', deviceId)
+          .single();
+          
+        if (data && !error) {
+          setUserProfile(prev => ({
+              ...prev,
+              name: data.name || prev.name,
+              avatarUrl: data.avatar_url || prev.avatarUrl,
+              gamerTag: data.gamer_tag || prev.gamerTag,
+              level: data.level || prev.level,
+              zoom: data.zoom || prev.zoom
+          }));
+        }
+      } catch (err) {
+        // If table doesn't exist or other error, strictly use local storage fallback
+        console.warn("Could not load profile from backend:", err);
+      }
+    };
+    loadProfile();
+  }, []);
+
+  // Save Profile to Supabase on change
   useEffect(() => {
     localStorage.setItem('agency_hud_profile', JSON.stringify(userProfile));
+    
+    const saveProfile = async () => {
+      if (!supabase) return;
+      const deviceId = getDeviceId();
+      
+      try {
+        await supabase.from('profiles').upsert({
+          id: deviceId,
+          name: userProfile.name,
+          avatar_url: userProfile.avatarUrl,
+          gamer_tag: userProfile.gamerTag,
+          level: userProfile.level,
+          zoom: userProfile.zoom,
+          updated_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.warn("Could not save profile to backend:", err);
+      }
+    };
+    
+    // Debounce to avoid excessive writes
+    const timeoutId = setTimeout(saveProfile, 1000);
+    return () => clearTimeout(timeoutId);
+    
   }, [userProfile]);
 
   useEffect(() => {
@@ -127,7 +195,7 @@ export default function App() {
     }
   };
 
-  const handleAddTask = async (title: string, durationMinutes?: number, spotifyUri?: string) => {
+  const handleAddTask = async (title: string, durationMinutes?: number, spotifyUri?: string, category?: string) => {
     const tempId = crypto.randomUUID();
     const tempTask: Task = {
       id: tempId,
@@ -136,7 +204,8 @@ export default function App() {
       isImportant: false,
       timestamp: Date.now(),
       duration: durationMinutes,
-      spotifyUri: spotifyUri
+      spotifyUri: spotifyUri,
+      category: category
     };
     setTasks(prev => [tempTask, ...prev]);
 
@@ -157,7 +226,7 @@ export default function App() {
 
     const { data, error } = await supabase
       .from('tasks')
-      .insert([{ title, completed: false, is_important: false }])
+      .insert([{ title, completed: false, is_important: false, category: category }])
       .select()
       .single();
 
@@ -243,6 +312,7 @@ export default function App() {
             customPlaylists={appSettings.customPlaylists}
           />
         )}
+        {currentView === 'progress' && <ProgressView tasks={tasks} />}
         {currentView === 'streaks' && <StreaksView tasks={tasks} timezone={appSettings.timezone} />}
         {currentView === 'journal' && <JournalView />}
         {currentView === 'settings' && (
