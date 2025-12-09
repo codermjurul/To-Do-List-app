@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Flame, Calendar as CalIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Flame, Calendar as CalIcon, ChevronLeft, ChevronRight, Clock, CheckCircle, Zap } from 'lucide-react';
 import { 
   format, 
   eachDayOfInterval, 
@@ -9,20 +9,27 @@ import {
   endOfWeek,
   addMonths,
   subMonths,
-  subDays
+  subDays,
+  isSameDay
 } from 'date-fns';
-import { Task } from '../types';
+import { Task, SessionRecord } from '../types';
 
 interface StreaksViewProps {
   tasks: Task[];
   timezone: string;
+  sessions: SessionRecord[];
+  streakStartTimestamp?: number;
 }
 
-export const StreaksView: React.FC<StreaksViewProps> = ({ tasks, timezone }) => {
+export const StreaksView: React.FC<StreaksViewProps> = ({ tasks, timezone, sessions, streakStartTimestamp = 0 }) => {
   const [viewDate, setViewDate] = useState(new Date());
 
+  // Filter tasks based on reset timestamp
+  const validTasks = useMemo(() => {
+    return tasks.filter(t => t.completed && t.timestamp >= streakStartTimestamp);
+  }, [tasks, streakStartTimestamp]);
+
   // Helper: Format a date object to 'YYYY-MM-DD' in the user's specific timezone.
-  // This is crucial for consistent grouping regardless of the browser's local time.
   const getDateStringInTimezone = (date: Date) => {
     return new Intl.DateTimeFormat('en-CA', { 
       timeZone: timezone,
@@ -32,47 +39,64 @@ export const StreaksView: React.FC<StreaksViewProps> = ({ tasks, timezone }) => 
     }).format(date);
   };
 
-  // 1. Calculate Active Dates (Set of 'YYYY-MM-DD' strings)
-  const completedDateStrings = useMemo(() => {
-    const dates = new Set<string>();
-    tasks.filter(t => t.completed).forEach(t => {
-      dates.add(getDateStringInTimezone(new Date(t.timestamp)));
+  // 1. Calculate Active Dates and Daily Stats
+  const dailyStats = useMemo(() => {
+    const stats = new Map<string, { tasks: number, xp: number, hours: number }>();
+    
+    // Process Tasks
+    validTasks.forEach(t => {
+      const dateKey = getDateStringInTimezone(new Date(t.timestamp));
+      const current = stats.get(dateKey) || { tasks: 0, xp: 0, hours: 0 };
+      stats.set(dateKey, {
+        ...current,
+        tasks: current.tasks + 1,
+        xp: current.xp + (t.xpWorth || 0)
+      });
     });
-    return dates;
-  }, [tasks, timezone]);
 
-  // 2. Calculate Current Streak (Enhanced Logic)
+    // Process Sessions for Hours
+    sessions.forEach(s => {
+       const dateKey = getDateStringInTimezone(new Date(s.started_at));
+       const current = stats.get(dateKey) || { tasks: 0, xp: 0, hours: 0 };
+       stats.set(dateKey, {
+         ...current,
+         hours: current.hours + (s.duration_seconds / 3600)
+       });
+    });
+
+    return stats;
+  }, [validTasks, sessions, timezone]);
+
+  const completedDateStrings = useMemo(() => {
+     return new Set(dailyStats.keys());
+  }, [dailyStats]);
+
+  // 2. Calculate Current Streak
   const streakCount = useMemo(() => {
     const now = new Date();
     const todayStr = getDateStringInTimezone(now);
     
-    // Check Yesterday in the specific timezone (safer than simple subtract for edge cases)
     const yesterday = subDays(now, 1);
     const yesterdayStr = getDateStringInTimezone(yesterday);
 
     let currentCheckDate: Date;
     let streak = 0;
 
-    // Determine start point for streak calculation
-    if (completedDateStrings.has(todayStr)) {
-      // User did a task today -> Streak is active ending today
+    if (completedDateStrings.has(todayStr) && dailyStats.get(todayStr)!.tasks > 0) {
       currentCheckDate = now;
-    } else if (completedDateStrings.has(yesterdayStr)) {
-      // User hasn't done task today, but did yesterday -> Streak is held ending yesterday
+    } else if (completedDateStrings.has(yesterdayStr) && dailyStats.get(yesterdayStr)!.tasks > 0) {
       currentCheckDate = yesterday;
     } else {
-      // User missed yesterday and today -> Streak broken
       return 0;
     }
 
-    // Count backwards consecutively
     let keepGoing = true;
     while (keepGoing) {
       const dateStr = getDateStringInTimezone(currentCheckDate);
-      
-      if (completedDateStrings.has(dateStr)) {
+      // Ensure we only count days where TASKS were actually done for the streak logic usually
+      // Assuming tasks > 0 for streak
+      if (completedDateStrings.has(dateStr) && dailyStats.get(dateStr)!.tasks > 0) {
         streak++;
-        // Move to previous day
         currentCheckDate = subDays(currentCheckDate, 1);
       } else {
         keepGoing = false;
@@ -80,9 +104,9 @@ export const StreaksView: React.FC<StreaksViewProps> = ({ tasks, timezone }) => 
     }
     
     return streak;
-  }, [completedDateStrings, timezone]);
+  }, [completedDateStrings, dailyStats, timezone]);
 
-  // Calendar Grid Generation (Visual)
+  // Calendar Grid
   const calendarDays = useMemo(() => {
     const monthStart = startOfMonth(viewDate);
     const monthEnd = endOfMonth(viewDate);
@@ -98,7 +122,7 @@ export const StreaksView: React.FC<StreaksViewProps> = ({ tasks, timezone }) => 
   const todayStr = getDateStringInTimezone(new Date());
 
   return (
-    <div className="flex-1 flex flex-col h-full items-center justify-start p-8 overflow-y-auto custom-scrollbar relative">
+    <div className="flex-1 flex flex-col h-full items-center justify-start p-8 overflow-y-auto custom-scrollbar relative animate-fade-in-up">
       <div className="w-full max-w-2xl flex flex-col items-center z-10 pt-4">
         
         {/* Massive Animated Flame & Score */}
@@ -120,7 +144,7 @@ export const StreaksView: React.FC<StreaksViewProps> = ({ tasks, timezone }) => 
         </div>
 
         {/* Live Calendar Card */}
-        <div className="w-full glass-panel rounded-3xl p-8 border border-white/10 shadow-2xl relative overflow-hidden backdrop-blur-xl bg-[#0B0E14]/80">
+        <div className="w-full glass-panel rounded-3xl p-8 border border-white/10 shadow-2xl relative overflow-visible backdrop-blur-xl bg-[#0B0E14]/80">
           
           {/* Header & Controls */}
           <div className="flex justify-between items-center mb-8">
@@ -154,18 +178,20 @@ export const StreaksView: React.FC<StreaksViewProps> = ({ tasks, timezone }) => 
             ))}
             
             {calendarDays.map((date, index) => {
-              // Convert the calendar grid date to the Target Timezone string to check status
               const gridDateStr = getDateStringInTimezone(date);
-              
               const isWorked = completedDateStrings.has(gridDateStr);
+              const stats = dailyStats.get(gridDateStr);
               const isCurrentMonth = date.getMonth() === viewDate.getMonth();
               const isTodayDate = gridDateStr === todayStr;
 
+              // Only show tooltip for days with meaningful data
+              const hasData = isWorked;
+
               return (
-                <div key={index} className="flex flex-col items-center justify-center min-h-[50px]">
+                <div key={index} className="flex flex-col items-center justify-center min-h-[50px] relative group/day z-0 hover:z-50">
                    <div 
                      className={`
-                       relative w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300
+                       relative w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 cursor-default
                        ${!isCurrentMonth ? 'opacity-20 grayscale' : ''}
                        ${isWorked 
                          ? 'bg-brand-primary text-black shadow-[0_0_15px_rgba(204,255,0,0.5)] scale-110 z-10' 
@@ -181,22 +207,48 @@ export const StreaksView: React.FC<StreaksViewProps> = ({ tasks, timezone }) => 
                         format(date, 'd')
                      )}
                      
-                     {/* Today Indicator Dot if not worked yet */}
                      {isTodayDate && !isWorked && (
                         <div className="absolute -bottom-1 w-1.5 h-1.5 bg-brand-primary rounded-full animate-bounce"></div>
                      )}
                    </div>
+
+                   {/* HOVER POPUP */}
+                   {hasData && (
+                     <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-48 bg-[#0B0E14] border border-brand-primary/20 rounded-xl p-3 shadow-2xl opacity-0 group-hover/day:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                        <div className="text-xs font-bold text-white border-b border-white/10 pb-2 mb-2 uppercase tracking-wide text-center">
+                          {format(date, 'MMM do, yyyy')}
+                        </div>
+                        <div className="space-y-1.5">
+                           <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1.5 text-gray-400">
+                                 <CheckCircle size={10} />
+                                 <span>Tasks</span>
+                              </div>
+                              <span className="font-bold text-white">{stats?.tasks || 0}</span>
+                           </div>
+                           <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1.5 text-gray-400">
+                                 <Zap size={10} />
+                                 <span>XP Gained</span>
+                              </div>
+                              <span className="font-bold text-brand-primary">{stats?.xp || 0}</span>
+                           </div>
+                           <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1.5 text-gray-400">
+                                 <Clock size={10} />
+                                 <span>Hours</span>
+                              </div>
+                              <span className="font-bold text-white">{(stats?.hours || 0).toFixed(1)}h</span>
+                           </div>
+                        </div>
+                        <div className="absolute bottom-[-5px] left-1/2 -translate-x-1/2 w-2 h-2 bg-[#0B0E14] border-r border-b border-brand-primary/20 rotate-45"></div>
+                     </div>
+                   )}
                 </div>
               );
             })}
           </div>
         </div>
-        
-        <p className="mt-6 text-gray-500 text-xs text-center max-w-sm">
-            Your streak is calculated based on the <span className="text-brand-primary">{timezone}</span> timezone. 
-            You can change this in Settings.
-        </p>
-
       </div>
     </div>
   );

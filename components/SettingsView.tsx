@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { UserProfile, AppSettings, CustomPlaylist } from '../types';
-import { Camera, Save, RefreshCw, ZoomIn, Globe, Clock, Music, Plus, Trash2, Users, Sparkles } from 'lucide-react';
+import { UserProfile, AppSettings, AppTheme } from '../types';
+import { Camera, RefreshCw, ZoomIn, Globe, Clock, Sparkles, Palette, AlertTriangle, Trash2, Award, X, Check, Grid } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
 interface SettingsViewProps {
@@ -8,13 +8,9 @@ interface SettingsViewProps {
   appSettings: AppSettings;
   onUpdateProfile: (profile: UserProfile) => void;
   onUpdateAppSettings: (settings: AppSettings) => void;
+  onResetLevel: () => void;
+  onResetStreaks: () => void;
 }
-
-const GAMER_TAGS = [
-  "Entrepreneur", "Outlaw", "Momentum", "Titan", "Maverick", 
-  "Visionary", "Operator", "Architect", "Stoic", "Legend",
-  "Savage", "Ronin", "Executive", "Founder", "Beast"
-];
 
 const TIMEZONES = [
   "UTC",
@@ -30,48 +26,48 @@ const TIMEZONES = [
   "Australia/Sydney"
 ];
 
-const AVATAR_LIBRARY = [
-  // Robots & Mechs
-  "https://api.dicebear.com/7.x/bottts/svg?seed=Glitch",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=Cyber",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=Apex",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=Legend",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=Nana",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=Zane",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=Omega",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=Prime",
-  
-  // Abstract / Gaming / Sports
-  "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&auto=format&fit=crop&q=60", // Joystick
-  "https://images.unsplash.com/photo-1552820728-8b83bb6b773f?w=400&auto=format&fit=crop&q=60", // Gaming setup
-  "https://images.unsplash.com/photo-1614728853913-1e2221eb31a3?w=400&auto=format&fit=crop&q=60", // Neon Mask
-  "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&auto=format&fit=crop&q=60", // Abstract
-  "https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=400&auto=format&fit=crop&q=60", // Football
-  "https://images.unsplash.com/photo-1519861531473-920026393112?w=400&auto=format&fit=crop&q=60", // Basketball
-  "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&auto=format&fit=crop&q=60", // Gaming Controller
-  
-  // Stylized / Emoji
-  "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Spooky",
-  "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Mario",
-  "https://api.dicebear.com/7.x/thumbs/svg?seed=Rock",
-  "https://api.dicebear.com/7.x/thumbs/svg?seed=Sky",
+const THEMES: { id: AppTheme; name: string; color: string }[] = [
+  { id: 'neon-lime', name: 'Neon Lime', color: '#CCFF00' },
+  { id: 'crimson-red', name: 'Crimson Red', color: '#EF4444' },
+  { id: 'cyan-blue', name: 'Cyan Blue', color: '#06B6D4' },
+  { id: 'royal-purple', name: 'Royal Purple', color: '#D946EF' },
+  { id: 'sunset-orange', name: 'Sunset Orange', color: '#F97316' },
+];
+
+const AVATAR_PRESETS = [
+  'Prime',
+  'Willem',
+  'George',
+  'Jocelyn',
+  'Destiny',
+  'Midnight',
+  'Cyber',
+  'Nexus',
+  'Omega',
+  'Viper'
 ];
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   userProfile,
   appSettings,
   onUpdateProfile,
-  onUpdateAppSettings
+  onUpdateAppSettings,
+  onResetLevel,
+  onResetStreaks
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [newPlaylistName, setNewPlaylistName] = useState('');
-  const [newPlaylistUri, setNewPlaylistUri] = useState('');
 
   // AI Generation State
   const [genPrompt, setGenPrompt] = useState('High quality Batman logo, cinematic lighting, 8k resolution');
   const [genSize, setGenSize] = useState<'1K' | '2K' | '4K'>('1K');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  
+  // Avatar Selection State
+  const [showAvatarPresets, setShowAvatarPresets] = useState(false);
+
+  // Confirmation Modal State
+  const [confirmAction, setConfirmAction] = useState<'level' | 'streak' | null>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -119,7 +115,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     } catch (e: any) {
       console.error(e);
       const errorMessage = e.message || e.toString();
-      // Handle missing key (Entity not found) or permission errors (403)
       if (
         errorMessage.includes("Requested entity was not found") || 
         errorMessage.includes("permission") || 
@@ -143,39 +138,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handleAddPlaylist = () => {
-    if (!newPlaylistName.trim() || !newPlaylistUri.trim()) return;
-    
-    // Basic validation for Spotify URI
-    if (!newPlaylistUri.includes('spotify:')) {
-      alert("Please enter a valid Spotify URI (e.g., spotify:playlist:...)");
-      return;
-    }
-
-    const newPlaylist: CustomPlaylist = {
-      id: crypto.randomUUID(),
-      name: newPlaylistName,
-      uri: newPlaylistUri
-    };
-
-    onUpdateAppSettings({
-      ...appSettings,
-      customPlaylists: [...(appSettings.customPlaylists || []), newPlaylist]
-    });
-
-    setNewPlaylistName('');
-    setNewPlaylistUri('');
-  };
-
-  const handleDeletePlaylist = (id: string) => {
-    onUpdateAppSettings({
-      ...appSettings,
-      customPlaylists: appSettings.customPlaylists.filter(p => p.id !== id)
-    });
+  const executeConfirmAction = () => {
+     if (confirmAction === 'level') {
+        onResetLevel();
+     } else if (confirmAction === 'streak') {
+        onResetStreaks();
+     }
+     setConfirmAction(null);
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+    <div className="flex-1 flex flex-col h-full overflow-hidden relative animate-fade-in-up">
+      
+      {/* Confirmation Modal */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+           <div className="bg-[#0B0E14] border border-red-500/30 rounded-2xl max-w-md w-full p-6 shadow-2xl relative animate-fade-in-up">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4 text-red-500 mx-auto">
+                 <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-white text-center mb-2">Are you sure?</h3>
+              <p className="text-gray-400 text-sm text-center mb-6 leading-relaxed">
+                 {confirmAction === 'level' 
+                    ? "This will reset your level to 1 and remove all gathered XP. This action cannot be undone."
+                    : "This will wipe your entire streak history. You will start from Day 0. This action cannot be undone."
+                 }
+              </p>
+              <div className="flex gap-3">
+                 <button 
+                    onClick={() => setConfirmAction(null)}
+                    className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold transition-colors"
+                 >
+                    Cancel
+                 </button>
+                 <button 
+                    onClick={executeConfirmAction}
+                    className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold transition-colors shadow-lg shadow-red-900/20"
+                 >
+                    Confirm Reset
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
       <div className="p-8 pb-4">
         <h1 className="text-3xl font-bold text-white tracking-tight">System Configuration</h1>
         <p className="text-gray-400 text-sm mt-1">Customize your HUD identity and preferences.</p>
@@ -209,7 +215,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {/* Upload Overlay */}
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"
                   >
                     <Camera className="text-white" size={24} />
                   </button>
@@ -221,25 +227,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     accept="image/*"
                   />
                 </div>
+                
+                {/* Avatar Presets Toggle */}
+                <button 
+                   onClick={() => setShowAvatarPresets(!showAvatarPresets)}
+                   className="mb-6 text-xs text-brand-primary hover:text-white flex items-center gap-1.5 font-bold uppercase tracking-wide border border-brand-primary/20 bg-brand-primary/5 hover:bg-brand-primary/10 px-3 py-1.5 rounded-full transition-all"
+                >
+                   <Grid size={12} /> {showAvatarPresets ? 'Hide Presets' : 'Select Avatar Preset'}
+                </button>
 
-                {/* Zoom Control */}
-                <div className="w-full max-w-xs mb-8">
-                  <div className="flex justify-between text-xs text-gray-500 mb-2">
-                    <span>Fit</span>
-                    <span className="flex items-center gap-1"><ZoomIn size={10} /> Zoom</span>
-                  </div>
-                  <input 
-                    type="range" 
-                    min="1" 
-                    max="3" 
-                    step="0.1" 
-                    value={userProfile.zoom}
-                    onChange={(e) => onUpdateProfile({ ...userProfile, zoom: parseFloat(e.target.value) })}
-                    className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-brand-primary"
-                  />
-                </div>
+                {/* Avatar Presets Grid */}
+                {showAvatarPresets && (
+                   <div className="w-full grid grid-cols-5 gap-3 mb-6 animate-fade-in bg-black/20 p-4 rounded-xl border border-white/5">
+                      {AVATAR_PRESETS.map((seed) => {
+                         const url = `https://api.dicebear.com/7.x/bottts/svg?seed=${seed}`;
+                         return (
+                            <button
+                               key={seed}
+                               onClick={() => onUpdateProfile({ ...userProfile, avatarUrl: url, zoom: 1 })}
+                               className="relative group aspect-square rounded-lg overflow-hidden border border-white/10 hover:border-brand-primary hover:shadow-[0_0_10px_rgba(204,255,0,0.3)] transition-all"
+                               title={seed}
+                            >
+                               <img src={url} alt={seed} className="w-full h-full object-cover" />
+                               {userProfile.avatarUrl === url && (
+                                  <div className="absolute inset-0 bg-brand-primary/20 flex items-center justify-center border-2 border-brand-primary">
+                                     <Check size={16} className="text-white drop-shadow-md" strokeWidth={3} />
+                                  </div>
+                               )}
+                            </button>
+                         );
+                      })}
+                   </div>
+                )}
 
-                {/* Name & Avatar Library Input */}
+                {/* Name & Rank */}
                 <div className="w-full space-y-6">
                   <div>
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Codename (Name)</label>
@@ -250,30 +271,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-brand-primary/50 focus:outline-none transition-colors"
                     />
                   </div>
-
-                  {/* Avatar Library Grid */}
+                  
+                  {/* Rank Display (Automated) */}
                   <div>
-                     <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block flex items-center gap-2">
-                        <Users size={12} /> Quick Select Avatar
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block flex items-center gap-2">
+                        <Award size={12} /> Current Classification
                      </label>
-                     <div className="grid grid-cols-5 gap-2">
-                        {AVATAR_LIBRARY.map((url, index) => (
-                           <button
-                              key={index}
-                              onClick={() => onUpdateProfile({ ...userProfile, avatarUrl: url })}
-                              className={`
-                                 relative aspect-square rounded-lg overflow-hidden border-2 transition-all cursor-pointer
-                                 ${userProfile.avatarUrl === url 
-                                    ? 'border-brand-primary shadow-[0_0_10px_rgba(204,255,0,0.4)] scale-105 z-10' 
-                                    : 'border-transparent opacity-50 hover:opacity-100 hover:border-white/20'
-                                 }
-                              `}
-                              title="Select Avatar"
-                           >
-                              <img src={url} alt={`Avatar ${index}`} className="w-full h-full object-cover" />
-                           </button>
-                        ))}
+                     <div className="w-full bg-brand-primary/10 border border-brand-primary/30 rounded-xl px-4 py-3 text-brand-primary font-bold tracking-wide flex items-center justify-between">
+                        <span>{userProfile.gamerTag}</span>
+                        <span className="text-xs opacity-70 uppercase bg-brand-primary text-black px-2 py-0.5 rounded">Lvl {userProfile.level}</span>
                      </div>
+                     <p className="text-[10px] text-gray-500 mt-2">
+                        Your rank is automatically updated every 5 levels. Gain XP by completing missions and journal entries.
+                     </p>
                   </div>
 
                   {/* AI Generation Section */}
@@ -334,26 +344,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
 
-            {/* Gamer Tag Selection */}
-            <div className="glass-panel p-6 rounded-2xl border border-white/5">
-              <h2 className="text-lg font-bold text-white mb-4">Class Selection (Tag)</h2>
-              <div className="flex flex-wrap gap-2">
-                {GAMER_TAGS.map(tag => (
-                  <button
-                    key={tag}
-                    onClick={() => onUpdateProfile({ ...userProfile, gamerTag: tag })}
-                    className={`
-                      px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all duration-200
-                      ${userProfile.gamerTag === tag 
-                        ? 'bg-brand-primary text-black border-brand-primary shadow-[0_0_10px_rgba(204,255,0,0.3)]' 
-                        : 'bg-white/5 text-gray-400 border-transparent hover:bg-white/10 hover:text-white'
-                      }
-                    `}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
+            {/* Danger Zone: Resets */}
+            <div className="glass-panel p-6 rounded-2xl border border-red-900/30 bg-red-900/5">
+               <h2 className="text-lg font-bold text-red-500 mb-4 flex items-center gap-2">
+                  <AlertTriangle size={18} />
+                  System Resets
+               </h2>
+               <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                     <div>
+                        <h4 className="text-sm font-bold text-gray-300">Reset Level & XP</h4>
+                        <p className="text-xs text-gray-500">Reboot your agent progression to Level 1.</p>
+                     </div>
+                     <button 
+                        onClick={() => setConfirmAction('level')}
+                        className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 text-xs font-bold rounded-lg transition-colors flex items-center gap-2"
+                     >
+                        <Trash2 size={12} /> Reset Level
+                     </button>
+                  </div>
+                  
+                  <div className="h-px bg-red-500/10"></div>
+
+                  <div className="flex items-center justify-between">
+                     <div>
+                        <h4 className="text-sm font-bold text-gray-300">Reset Streak History</h4>
+                        <p className="text-xs text-gray-500">Clear your consistency records and start fresh.</p>
+                     </div>
+                     <button 
+                        onClick={() => setConfirmAction('streak')}
+                        className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 text-xs font-bold rounded-lg transition-colors flex items-center gap-2"
+                     >
+                        <Trash2 size={12} /> Reset Streaks
+                     </button>
+                  </div>
+               </div>
             </div>
 
           </div>
@@ -361,6 +386,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {/* RIGHT COLUMN: System */}
           <div className="space-y-8">
              
+             {/* Theme Settings */}
+             <div className="glass-panel p-6 rounded-2xl border border-white/5">
+                <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                   <Palette size={18} className="text-brand-primary" />
+                   Visual Theme
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                   {THEMES.map(theme => (
+                      <button
+                        key={theme.id}
+                        onClick={() => onUpdateAppSettings({ ...appSettings, theme: theme.id })}
+                        className={`
+                          flex items-center gap-3 p-3 rounded-xl border transition-all duration-200
+                          ${appSettings.theme === theme.id 
+                            ? 'bg-white/10 border-brand-primary ring-1 ring-brand-primary/50' 
+                            : 'bg-black/20 border-white/5 hover:bg-white/5'
+                          }
+                        `}
+                      >
+                         <div 
+                           className="w-6 h-6 rounded-full shadow-lg"
+                           style={{ backgroundColor: theme.color }}
+                         ></div>
+                         <span className={`text-sm font-medium ${appSettings.theme === theme.id ? 'text-white' : 'text-gray-400'}`}>
+                           {theme.name}
+                         </span>
+                      </button>
+                   ))}
+                </div>
+             </div>
+
              {/* Timezone Settings */}
              <div className="glass-panel p-6 rounded-2xl border border-white/5">
                 <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
@@ -390,66 +446,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <p className="text-[10px] text-gray-500 mt-2">
                     Used for streak calculations. Tasks completed today in your timezone count for today.
                   </p>
-                </div>
-             </div>
-
-             {/* Custom Playlists Manager */}
-             <div className="glass-panel p-6 rounded-2xl border border-white/5">
-                <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-                   <Music size={18} className="text-brand-primary" />
-                   Soundtrack Manager
-                </h2>
-                
-                <div className="space-y-4 mb-6">
-                   <div className="grid grid-cols-12 gap-2">
-                      <input 
-                        type="text" 
-                        placeholder="Playlist Name"
-                        value={newPlaylistName}
-                        onChange={(e) => setNewPlaylistName(e.target.value)}
-                        className="col-span-5 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-brand-primary/50 focus:outline-none"
-                      />
-                      <input 
-                        type="text" 
-                        placeholder="Spotify URI (spotify:playlist:...)"
-                        value={newPlaylistUri}
-                        onChange={(e) => setNewPlaylistUri(e.target.value)}
-                        className="col-span-5 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:border-brand-primary/50 focus:outline-none"
-                      />
-                      <button 
-                        onClick={handleAddPlaylist}
-                        disabled={!newPlaylistName || !newPlaylistUri}
-                        className="col-span-2 bg-brand-primary hover:bg-brand-secondary text-black rounded-xl flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Plus size={18} />
-                      </button>
-                   </div>
-                   <p className="text-[10px] text-gray-500">
-                     Right-click a playlist in Spotify → Share → Copy Spotify URI
-                   </p>
-                </div>
-
-                <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
-                   {appSettings.customPlaylists?.map(playlist => (
-                     <div key={playlist.id} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5">
-                        <div className="flex items-center gap-3 overflow-hidden">
-                           <Music size={14} className="text-gray-400 shrink-0" />
-                           <div className="truncate">
-                              <p className="text-sm font-medium text-white truncate">{playlist.name}</p>
-                              <p className="text-[10px] text-gray-600 truncate">{playlist.uri}</p>
-                           </div>
-                        </div>
-                        <button 
-                          onClick={() => handleDeletePlaylist(playlist.id)}
-                          className="text-gray-600 hover:text-red-400 p-1.5 hover:bg-white/10 rounded-md transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                     </div>
-                   ))}
-                   {(!appSettings.customPlaylists || appSettings.customPlaylists.length === 0) && (
-                      <p className="text-center text-xs text-gray-600 py-2 italic">No custom playlists added yet.</p>
-                   )}
                 </div>
              </div>
 

@@ -1,4 +1,3 @@
-
 import React, { useMemo } from 'react';
 import { Task } from '../types';
 import { TrendingUp, Activity, PieChart, Target, Zap, ArrowUpRight } from 'lucide-react';
@@ -34,7 +33,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ tasks }) => {
   const discipline = getStats('Discipline');
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+    <div className="flex-1 flex flex-col h-full overflow-hidden relative animate-fade-in-up">
       <div className="p-8 pb-4">
         <h1 className="text-3xl font-bold text-white tracking-tight">System Analytics</h1>
         <p className="text-gray-400 text-sm mt-1">Performance metrics across all departments.</p>

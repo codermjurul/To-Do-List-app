@@ -22,16 +22,17 @@
                 700: '#2A303F', // Borders
               },
               brand: {
-                primary: '#CCFF00', // Neon Lime
-                secondary: '#A3E635', // Lime 400
-                glow: '#ECFCCB', // Lime 100
-                accent: '#84CC16', // Lime 600
+                primary: 'var(--color-brand-primary)', 
+                secondary: 'var(--color-brand-secondary)', 
+                glow: 'var(--color-brand-glow)', 
+                accent: 'var(--color-brand-accent)', 
               }
             },
             animation: {
               'fire': 'fire 2s ease-in-out infinite',
               'fire-inner': 'fire 1.5s ease-in-out infinite reverse',
               'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'fade-in-up': 'fadeInUp 0.3s ease-out forwards',
             },
             keyframes: {
               fire: {
@@ -40,6 +41,10 @@
                 '50%': { transform: 'scale(1.1) rotate(2deg) translateY(-4px)' },
                 '75%': { transform: 'scale(1.05) rotate(-1deg)' },
                 '100%': { transform: 'scale(1) rotate(0deg)' },
+              },
+              fadeInUp: {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
               }
             }
           }
@@ -47,12 +52,19 @@
       }
     </script>
     <style>
+      :root {
+        --color-brand-primary: #CCFF00;
+        --color-brand-secondary: #A3E635;
+        --color-brand-glow: #ECFCCB;
+        --color-brand-accent: #84CC16;
+      }
+
       body {
         background-color: #0B0E14;
         color: #E1E1E1;
-        /* Green/Teal Nebula Background Effect */
+        /* Nebula Background Effect */
         background-image: 
-          radial-gradient(circle at 15% 50%, rgba(204, 255, 0, 0.03), transparent 25%),
+          radial-gradient(circle at 15% 50%, rgba(var(--color-brand-primary), 0.03), transparent 25%),
           radial-gradient(circle at 85% 30%, rgba(20, 184, 166, 0.04), transparent 25%);
         background-attachment: fixed;
       }
