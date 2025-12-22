@@ -50,7 +50,6 @@ const THEME_COLORS: Record<AppTheme, { primary: string; secondary: string; glow:
 export default function App() {
   const deviceId = useMemo(() => getDeviceId(), []);
 
-  // Initialize tasks from LocalStorage
   const [tasks, setTasks] = useState<Task[]>(() => {
     const saved = localStorage.getItem('agency_hud_tasks');
     return saved ? JSON.parse(saved) : [];
@@ -83,6 +82,7 @@ export default function App() {
     isActive: false,
     isPaused: false,
     startTime: null,
+    accumulatedSeconds: 0,
     elapsedSeconds: 0,
     sessionId: null
   });
@@ -119,7 +119,6 @@ export default function App() {
     };
   });
 
-  const taskTimerRef = useRef<number | null>(null);
   const sessionTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -131,12 +130,10 @@ export default function App() {
     root.style.setProperty('--color-brand-accent', theme.accent);
   }, [appSettings.theme]);
 
-  // Persist Lists
   useEffect(() => {
     localStorage.setItem('agency_hud_lists', JSON.stringify(taskLists));
   }, [taskLists]);
 
-  // Persist Tasks
   useEffect(() => {
     localStorage.setItem('agency_hud_tasks', JSON.stringify(tasks));
   }, [tasks]);
@@ -220,11 +217,121 @@ export default function App() {
 
   useEffect(() => {
     fetchTasks();
+  }, []);
+
+  // DELTA-BASED TIMER LOGIC
+  useEffect(() => {
+    if (sessionState.isActive && !sessionState.isPaused && sessionState.startTime) {
+      sessionTimerRef.current = window.setInterval(() => {
+        const now = Date.now();
+        const delta = Math.floor((now - sessionState.startTime!) / 1000);
+        setSessionState(prev => ({ 
+          ...prev, 
+          elapsedSeconds: prev.accumulatedSeconds + delta 
+        }));
+      }, 1000);
+    } else {
+      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+    }
     return () => {
-      if (taskTimerRef.current) clearInterval(taskTimerRef.current);
       if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
     };
-  }, []);
+  }, [sessionState.isActive, sessionState.isPaused, sessionState.startTime]);
+
+  const handleStartSession = async () => {
+    const startTime = Date.now();
+    const newSessionId = crypto.randomUUID();
+
+    setSessionState({
+      isActive: true,
+      isPaused: false,
+      startTime,
+      accumulatedSeconds: 0,
+      elapsedSeconds: 0,
+      sessionId: newSessionId
+    });
+
+    if (supabase) {
+      try {
+        await supabase.from('sessions').insert([{
+          id: newSessionId,
+          user_id: deviceId,
+          started_at: new Date(startTime).toISOString(),
+        }]);
+      } catch (e) {
+        console.warn("Session logging backend fail");
+      }
+    }
+  };
+
+  const handlePauseSession = () => {
+    setSessionState(prev => {
+      if (!prev.isActive) return prev;
+      if (prev.isPaused) {
+        // Resuming: Set a new startTime
+        return {
+          ...prev,
+          isPaused: false,
+          startTime: Date.now()
+        };
+      } else {
+        // Pausing: Calculate the time passed in this segment and add to accumulated
+        const now = Date.now();
+        const delta = prev.startTime ? Math.floor((now - prev.startTime) / 1000) : 0;
+        return {
+          ...prev,
+          isPaused: true,
+          accumulatedSeconds: prev.accumulatedSeconds + delta,
+          elapsedSeconds: prev.accumulatedSeconds + delta,
+          startTime: null
+        };
+      }
+    });
+  };
+
+  const handleStopSession = async () => {
+    const now = Date.now();
+    const lastDelta = sessionState.startTime ? Math.floor((now - sessionState.startTime) / 1000) : 0;
+    const totalDuration = sessionState.accumulatedSeconds + lastDelta;
+    
+    const newSessionRecord: SessionRecord = {
+       id: sessionState.sessionId || crypto.randomUUID(),
+       user_id: deviceId,
+       started_at: new Date(sessionState.startTime || Date.now()).toISOString(),
+       ended_at: new Date().toISOString(),
+       duration_seconds: totalDuration
+    };
+    setSessions(prev => [...prev, newSessionRecord]);
+
+    if (supabase && sessionState.sessionId) {
+      try {
+        await supabase.from('sessions').update({
+          ended_at: new Date().toISOString(),
+          duration_seconds: totalDuration
+        }).eq('id', sessionState.sessionId);
+      } catch(e) {
+        console.warn("Stop session backend fail");
+      }
+      
+      const newTotalSeconds = (userProfile.stats?.totalHours || 0) * 3600 + totalDuration;
+      setUserProfile(prev => ({
+        ...prev,
+        stats: {
+          ...prev.stats!,
+          totalHours: newTotalSeconds / 3600
+        }
+      }));
+    }
+
+    setSessionState({
+      isActive: false,
+      isPaused: false,
+      sessionId: null,
+      accumulatedSeconds: 0,
+      elapsedSeconds: 0,
+      startTime: null
+    });
+  };
 
   const handleXPGain = (amount: number) => {
     setUserProfile(prev => {
@@ -269,89 +376,6 @@ export default function App() {
         ...prev,
         streakStartTimestamp: Date.now()
      }));
-  };
-
-  useEffect(() => {
-    if (sessionState.isActive && !sessionState.isPaused) {
-      sessionTimerRef.current = window.setInterval(() => {
-        setSessionState(prev => ({ ...prev, elapsedSeconds: prev.elapsedSeconds + 1 }));
-      }, 1000);
-    } else {
-      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
-    }
-    return () => {
-      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
-    };
-  }, [sessionState.isActive, sessionState.isPaused]);
-
-  const handleStartSession = async () => {
-    const startTime = Date.now();
-    const newSessionId = crypto.randomUUID();
-
-    setSessionState({
-      isActive: true,
-      isPaused: false,
-      startTime,
-      elapsedSeconds: 0,
-      sessionId: newSessionId
-    });
-
-    if (supabase) {
-      try {
-        await supabase.from('sessions').insert([{
-          id: newSessionId,
-          user_id: deviceId,
-          started_at: new Date(startTime).toISOString(),
-        }]);
-      } catch (e) {
-        console.warn("Session logging disabled (backend error)");
-      }
-    }
-  };
-
-  const handlePauseSession = () => {
-    setSessionState(prev => ({ ...prev, isPaused: !prev.isPaused }));
-  };
-
-  const handleStopSession = async () => {
-    const duration = sessionState.elapsedSeconds;
-    
-    const newSessionRecord: SessionRecord = {
-       id: sessionState.sessionId || crypto.randomUUID(),
-       user_id: deviceId,
-       started_at: new Date(sessionState.startTime || Date.now()).toISOString(),
-       ended_at: new Date().toISOString(),
-       duration_seconds: duration
-    };
-    setSessions(prev => [...prev, newSessionRecord]);
-
-    if (supabase && sessionState.sessionId) {
-      try {
-        await supabase.from('sessions').update({
-          ended_at: new Date().toISOString(),
-          duration_seconds: duration
-        }).eq('id', sessionState.sessionId);
-      } catch(e) {
-        console.warn("Stop session backend fail");
-      }
-      
-      const newTotalSeconds = (userProfile.stats?.totalHours || 0) * 3600 + duration;
-      setUserProfile(prev => ({
-        ...prev,
-        stats: {
-          ...prev.stats!,
-          totalHours: newTotalSeconds / 3600
-        }
-      }));
-    }
-
-    setSessionState({
-      isActive: false,
-      isPaused: false,
-      sessionId: null,
-      elapsedSeconds: 0,
-      startTime: null
-    });
   };
 
   const fetchTasks = async () => {
@@ -516,7 +540,6 @@ export default function App() {
     setTaskLists(prev => [...prev, newList]);
   };
 
-  // Logic: Calculate list stats based on "Daily Reset" for the 'daily' list
   const listStats = useMemo(() => {
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -534,13 +557,12 @@ export default function App() {
       const isTaskFromToday = taskDate.getTime() === todayTs;
 
       if (isDailyList) {
-        // Only count if created today
+        // Only count if created today to allow reset next day
         if (isTaskFromToday) {
             acc[listId].total++;
             if (t.completed) acc[listId].completed++;
         }
       } else {
-        // Standard behavior for other lists
         acc[listId].total++;
         if (t.completed) acc[listId].completed++;
       }

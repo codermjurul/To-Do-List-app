@@ -1,5 +1,4 @@
 
-
 export type ViewType = 'tasks' | 'progress' | 'streaks' | 'journal' | 'settings';
 
 export interface TaskList {
@@ -17,8 +16,8 @@ export interface Task {
   listId?: string;
   title: string;
   completed: boolean;
-  priority: TaskPriority; // Replaces simple boolean isImportant
-  xpWorth: number; // Calculated on creation
+  priority: TaskPriority; 
+  xpWorth: number; 
   category?: string;
   timestamp: number;
   completedAt?: number;
@@ -43,8 +42,9 @@ export interface TimerState {
 export interface SessionState {
   isActive: boolean;
   isPaused: boolean;
-  startTime: number | null; // Timestamp
-  elapsedSeconds: number;
+  startTime: number | null; // Timestamp of the last start/resume
+  accumulatedSeconds: number; // Seconds from previous segments before the current pause
+  elapsedSeconds: number; // Total displayed time
   sessionId: string | null;
 }
 
