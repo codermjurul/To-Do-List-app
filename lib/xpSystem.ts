@@ -30,7 +30,7 @@ export const getPriorityColor = (priority: TaskPriority) => {
     case 'Critical': return 'text-red-500 bg-red-500/10 border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.2)]';
     case 'High': return 'text-orange-400 bg-orange-500/10 border-orange-500/30';
     case 'Medium': return 'text-blue-400 bg-blue-500/10 border-blue-500/30';
-    case 'Low': return 'text-gray-400 bg-gray-500/10 border-gray-500/30';
+    case 'Low': return 'text-sky-100 bg-sky-500/20 border-sky-500/30'; // Updated for better visibility
     default: return 'text-gray-400 bg-gray-500/10';
   }
 };

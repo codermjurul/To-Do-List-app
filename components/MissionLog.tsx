@@ -1,7 +1,6 @@
 
-
-import React, { useState, useMemo } from 'react';
-import { Plus, Check, Trash2, Trophy, Clock, Zap, AlertTriangle, AlertCircle, ChevronLeft } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Check, Trash2, Trophy, Clock, Zap, AlertCircle, ChevronLeft, Plus, ArrowUp, Flag, ArrowRight, X } from 'lucide-react';
 import { Task, TimerState, TaskPriority, UserProfile } from '../types';
 import { calculateTaskXP, getPriorityColor } from '../lib/xpSystem';
 
@@ -11,17 +10,18 @@ interface MissionLogProps {
   onAddTask: (title: string, durationMinutes: number, priority: TaskPriority) => void;
   onToggleComplete: (id: string) => void;
   onDeleteTask: (id: string) => void;
+  listId: string;
   listName: string;
   onBack?: () => void;
   userProfile: UserProfile;
 }
 
 const DURATIONS = [5, 10, 20, 30, 40, 60, 120, 180];
-const PRIORITIES: { id: TaskPriority, label: string }[] = [
-  { id: 'Low', label: 'Low' },
-  { id: 'Medium', label: 'Medium' },
-  { id: 'High', label: 'High' },
-  { id: 'Critical', label: 'Critical' }
+const PRIORITIES: { id: TaskPriority, label: string, color: string }[] = [
+  { id: 'Low', label: 'Low', color: 'text-sky-300' },
+  { id: 'Medium', label: 'Medium', color: 'text-blue-400' },
+  { id: 'High', label: 'High', color: 'text-orange-400' },
+  { id: 'Critical', label: 'Critical', color: 'text-red-500' }
 ];
 
 export const MissionLog: React.FC<MissionLogProps> = ({ 
@@ -29,48 +29,77 @@ export const MissionLog: React.FC<MissionLogProps> = ({
   onAddTask, 
   onToggleComplete, 
   onDeleteTask,
+  listId,
   listName,
   onBack,
   userProfile
 }) => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [selectedDuration, setSelectedDuration] = useState<number>(20); // Default 20 mins
+  const [selectedDuration, setSelectedDuration] = useState<number>(20);
   const [selectedPriority, setSelectedPriority] = useState<TaskPriority>('Medium');
+  
+  const [showPriorityMenu, setShowPriorityMenu] = useState(false);
+  const [showDurationMenu, setShowDurationMenu] = useState(false);
+  
+  const priorityRef = useRef<HTMLDivElement>(null);
+  const durationRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Pre-load the sound
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (priorityRef.current && !priorityRef.current.contains(event.target as Node)) {
+        setShowPriorityMenu(false);
+      }
+      if (durationRef.current && !durationRef.current.contains(event.target as Node)) {
+        setShowDurationMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const successAudio = useMemo(() => {
     const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3');
     audio.volume = 0.4;
     return audio;
   }, []);
 
-  const activeTasks = useMemo(() => tasks.filter(t => !t.completed), [tasks]);
-  const completedTasks = useMemo(() => tasks.filter(t => t.completed), [tasks]);
+  // Filter tasks: For the 'daily' list, we show everything from today + uncompleted from yesterday
+  const filteredTasks = useMemo(() => {
+    if (listId !== 'daily' && !listId.includes('daily')) return tasks;
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const todayTs = today.getTime();
+
+    return tasks.filter(t => {
+       const taskDate = new Date(t.timestamp);
+       taskDate.setHours(0,0,0,0);
+       const isFromToday = taskDate.getTime() === todayTs;
+       return isFromToday || !t.completed;
+    });
+  }, [tasks, listId]);
+
+  const activeTasks = useMemo(() => filteredTasks.filter(t => !t.completed), [filteredTasks]);
+  const completedTasks = useMemo(() => filteredTasks.filter(t => t.completed), [filteredTasks]);
   
-  // XP Calculation based on User Profile (Global)
   const xpPercentage = userProfile.nextLevelXP > 0 
     ? Math.min(100, Math.round((userProfile.currentXP / userProfile.nextLevelXP) * 100)) 
     : 0;
-
-  // Calculate potential XP for new task preview
-  const previewXP = useMemo(() => {
-    return calculateTaskXP(selectedDuration, selectedPriority);
-  }, [selectedDuration, selectedPriority]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
     
-    onAddTask(
-      newTaskTitle, 
-      selectedDuration, 
-      selectedPriority
-    );
+    onAddTask(newTaskTitle, selectedDuration, selectedPriority);
     
-    // Reset defaults
     setNewTaskTitle('');
     setSelectedDuration(20);
     setSelectedPriority('Medium');
+    setShowPriorityMenu(false);
+    setShowDurationMenu(false);
+    
+    inputRef.current?.focus();
   };
 
   const handleTaskCheck = (id: string) => {
@@ -85,6 +114,15 @@ export const MissionLog: React.FC<MissionLogProps> = ({
   const formatDurationChip = (mins: number) => {
     if (mins >= 60) return `${mins/60}h`;
     return `${mins}m`;
+  };
+
+  const getPriorityIconColor = (p: TaskPriority) => {
+    switch(p) {
+        case 'Critical': return 'text-red-500';
+        case 'High': return 'text-orange-400';
+        case 'Medium': return 'text-blue-400';
+        default: return 'text-sky-300';
+    }
   };
 
   return (
@@ -108,7 +146,6 @@ export const MissionLog: React.FC<MissionLogProps> = ({
           </div>
           
           <div className="flex items-center gap-6">
-             {/* Global XP Progress Bar */}
              <div className="flex flex-col gap-2 w-64">
                 <div className="flex justify-between items-center text-xs font-medium">
                    <div className="flex items-center gap-1.5 text-brand-primary">
@@ -129,15 +166,12 @@ export const MissionLog: React.FC<MissionLogProps> = ({
       </div>
 
       {/* Main Task List */}
-      <div className="flex-1 px-8 pb-8 overflow-hidden z-10">
+      <div className="flex-1 px-8 pb-24 overflow-hidden z-10">
         <div className="h-full glass-panel rounded-2xl flex flex-col overflow-hidden border-white/5">
-          
-          {/* List Header */}
           <div className="flex items-center px-6 py-4 border-b border-white/5 bg-white/[0.02] text-xs font-medium text-gray-500 uppercase tracking-wider">
             <div className="flex-1">Mission Objective</div>
           </div>
 
-          {/* List Body */}
           <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
             {activeTasks.map((task) => (
               <TaskRow 
@@ -157,7 +191,7 @@ export const MissionLog: React.FC<MissionLogProps> = ({
             {completedTasks.length > 0 && (
               <div className="pt-6 pb-2 px-4">
                  <div className="flex items-center gap-3 text-gray-500">
-                    <span className="text-xs font-bold uppercase tracking-widest opacity-70">Completed</span>
+                    <span className="text-xs font-bold uppercase tracking-widest opacity-70">Completed Today</span>
                     <div className="h-px bg-white/10 flex-1"></div>
                     <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded-full">{completedTasks.length} Done</span>
                  </div>
@@ -173,91 +207,123 @@ export const MissionLog: React.FC<MissionLogProps> = ({
               />
             ))}
           </div>
+        </div>
+      </div>
 
-          {/* Add Task Input Area */}
-          <div className="p-4 border-t border-white/5 bg-white/[0.02]">
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-              <div className="relative">
-                <Plus size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-primary" />
-                <input 
-                  type="text" 
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  placeholder="Add a new mission..."
-                  className="w-full bg-black/20 border border-white/10 rounded-xl py-3 pl-11 pr-4 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-brand-primary/50 focus:bg-black/40 transition-all"
-                />
-              </div>
+      {/* Add Task Bar */}
+      <div className="absolute bottom-8 left-8 right-8 z-30">
+        <form 
+          onSubmit={handleSubmit} 
+          className="w-full bg-[#0B0E14]/80 backdrop-blur-xl border border-white/10 rounded-2xl pl-4 pr-2 py-2 shadow-2xl flex items-center gap-3 focus-within:border-brand-primary/50 focus-within:shadow-[0_0_30px_rgba(204,255,0,0.2)] transition-all duration-300 relative group"
+        >
+           <div className="shrink-0 text-brand-primary/70 group-focus-within:text-brand-primary transition-colors">
+              <Plus size={22} />
+           </div>
 
-              {/* Controls Container */}
-              {newTaskTitle.length > 0 && (
-                <div className="flex flex-col gap-3 animate-fade-in">
-                  
-                  <div className="flex items-center gap-4 overflow-x-auto pb-1 custom-scrollbar">
-                     
-                     {/* Priority Selector */}
-                     <div className="flex items-center gap-2 shrink-0">
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500 mr-1">
-                           <AlertTriangle size={12} />
-                           <span>Priority:</span>
-                        </div>
+           <input 
+              ref={inputRef}
+              type="text"
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              placeholder="Initialize new mission..."
+              className="flex-1 bg-transparent border-none outline-none text-white placeholder-gray-600 font-medium h-10 text-lg"
+           />
+
+           <div className="flex items-center gap-2 bg-white/5 rounded-xl p-1 border border-white/5">
+               <div className="relative" ref={priorityRef}>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowPriorityMenu(!showPriorityMenu);
+                      setShowDurationMenu(false);
+                    }}
+                    className={`
+                      flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all hover:bg-white/10
+                      ${getPriorityIconColor(selectedPriority)}
+                    `}
+                  >
+                     <Flag size={16} fill={selectedPriority !== 'Medium' ? 'currentColor' : 'none'} />
+                     <span className="hidden sm:inline-block">{selectedPriority}</span>
+                  </button>
+
+                  {showPriorityMenu && (
+                     <div className="absolute bottom-full mb-3 right-0 w-32 bg-[#151921] border border-white/10 rounded-xl shadow-xl overflow-hidden animate-fade-in-up p-1 z-50">
                         {PRIORITIES.map(p => (
                            <button
                               key={p.id}
                               type="button"
-                              onClick={() => setSelectedPriority(p.id)}
-                              className={`
-                                 px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wide border transition-all shrink-0
-                                 ${selectedPriority === p.id
-                                    ? getPriorityColor(p.id) + ' bg-opacity-20 border-opacity-80 scale-105'
-                                    : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-gray-200'
-                                 }
-                              `}
+                              onClick={() => {
+                                 setSelectedPriority(p.id);
+                                 setShowPriorityMenu(false);
+                              }}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-lg text-left transition-colors ${p.color} hover:bg-white/5`}
                            >
+                              <Flag size={12} className={p.id === selectedPriority ? 'fill-current' : ''} />
                               {p.label}
                            </button>
                         ))}
                      </div>
+                  )}
+               </div>
 
-                     {/* Duration Selector */}
-                     <div className="flex items-center gap-2 shrink-0">
-                      <div className="flex items-center gap-1.5 text-xs text-gray-500 mr-1">
-                        <Clock size={12} />
-                        <span>Duration:</span>
-                      </div>
-                      {DURATIONS.map(mins => (
-                        <button
-                          key={mins}
-                          type="button"
-                          onClick={() => setSelectedDuration(mins)}
-                          className={`
-                            px-3 py-1 rounded-full text-xs font-medium border transition-all shrink-0
-                            ${selectedDuration === mins 
-                              ? 'bg-brand-primary text-black border-brand-primary shadow-[0_0_10px_rgba(204,255,0,0.3)]' 
-                              : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-gray-200'
-                            }
-                          `}
-                        >
-                          {formatDurationChip(mins)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+               <div className="w-px h-4 bg-white/10"></div>
 
-                  {/* XP Preview Badge */}
-                  <div className="flex justify-end mt-1">
-                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
-                        <Zap size={12} className="text-yellow-400 fill-yellow-400" />
-                        <span className="text-xs font-medium text-gray-300">Estimated Reward:</span>
-                        <span className="text-xs font-bold text-white">{previewXP} XP</span>
+               <div className="relative" ref={durationRef}>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowDurationMenu(!showDurationMenu);
+                      setShowPriorityMenu(false);
+                    }}
+                    className={`
+                      flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all hover:bg-white/10
+                      ${selectedDuration !== 20 ? 'text-brand-primary' : 'text-gray-400'}
+                    `}
+                  >
+                     <Clock size={16} />
+                     <span className="hidden sm:inline-block">{formatDurationChip(selectedDuration)}</span>
+                  </button>
+
+                  {showDurationMenu && (
+                     <div className="absolute bottom-full mb-3 right-0 w-48 bg-[#151921] border border-white/10 rounded-xl shadow-xl overflow-hidden animate-fade-in-up p-2 grid grid-cols-4 gap-1 z-50">
+                        {DURATIONS.map(d => (
+                           <button
+                              key={d}
+                              type="button"
+                              onClick={() => {
+                                 setSelectedDuration(d);
+                                 setShowDurationMenu(false);
+                              }}
+                              className={`
+                                flex items-center justify-center py-2 rounded-lg text-xs font-bold transition-colors
+                                ${selectedDuration === d 
+                                   ? 'bg-brand-primary text-black' 
+                                   : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                                }
+                              `}
+                           >
+                              {formatDurationChip(d)}
+                           </button>
+                        ))}
                      </div>
-                  </div>
+                  )}
+               </div>
+           </div>
 
-                </div>
-              )}
-            </form>
-          </div>
-
-        </div>
+           <button 
+              type="submit"
+              disabled={!newTaskTitle.trim()}
+              className={`
+                 w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300
+                 ${newTaskTitle.trim() 
+                    ? 'bg-brand-primary text-black hover:bg-brand-secondary hover:scale-105 shadow-[0_0_15px_rgba(204,255,0,0.3)]' 
+                    : 'bg-white/5 text-gray-600 cursor-not-allowed'
+                 }
+              `}
+           >
+              <ArrowRight size={20} strokeWidth={2.5} />
+           </button>
+        </form>
       </div>
     </div>
   );
@@ -282,7 +348,6 @@ const TaskRow: React.FC<{
       `}
     >
       <div className="flex items-center gap-4 flex-1 overflow-hidden">
-        {/* Checkbox */}
         <button 
           onClick={() => onToggleComplete(task.id)}
           className={`
@@ -298,7 +363,6 @@ const TaskRow: React.FC<{
           {task.completed && <Check size={12} strokeWidth={3} />}
         </button>
 
-        {/* Task Details */}
         <div className="flex flex-col justify-center overflow-hidden w-full">
           <div className="flex items-center gap-2 w-full">
             {task.priority === 'Critical' && !task.completed && (
@@ -308,30 +372,25 @@ const TaskRow: React.FC<{
               {task.title}
             </span>
             
-            {/* XP Badge */}
             <span className="text-[9px] px-1 py-0.5 rounded bg-yellow-400/10 text-yellow-400 border border-yellow-400/20 flex items-center gap-0.5 font-bold shrink-0">
                <Zap size={8} fill="currentColor" /> {task.xpWorth || 10}
             </span>
 
-            {/* Priority Badge */}
             <span className={`text-[9px] px-1.5 py-0.5 rounded border uppercase tracking-wide font-bold shrink-0 ${getPriorityColor(task.priority || 'Medium')}`}>
               {task.priority || 'Medium'}
             </span>
           </div>
-          {!task.completed && (
-             <span className="text-[10px] text-gray-500 mt-0.5 flex items-center gap-2">
-               {new Date(task.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-             </span>
-          )}
+          <span className="text-[10px] text-gray-500 mt-0.5 flex items-center gap-2">
+            {new Date(task.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            {task.duration && <span className="flex items-center gap-1"><Clock size={10} /> {task.duration}m</span>}
+          </span>
         </div>
       </div>
 
-      {/* Delete Action - Appears on hover */}
       <div className="flex items-center">
          <button 
           onClick={() => onDeleteTask(task.id)}
           className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-2 hover:bg-white/5 rounded-lg"
-          title="Delete task"
         >
           <Trash2 size={16} />
         </button>

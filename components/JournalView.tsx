@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Book, Plus, Image as ImageIcon, Save, Trash2, X, Search, Trophy, Calendar, ZoomIn } from 'lucide-react';
+import { Book, Plus, Image as ImageIcon, Save, Trash2, X, Search, Trophy, Calendar, ZoomIn, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { JournalEntry, UserProfile } from '../types';
 import { format } from 'date-fns';
@@ -21,17 +21,15 @@ const MOODS: { id: JournalEntry['mood']; label: string; icon: string; color: str
 export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userProfile, onXPGain }) => {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
-  
-  // State to manage Editor visibility and Mode
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isNewEntry, setIsNewEntry] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  // Editor State
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editMood, setEditMood] = useState<JournalEntry['mood']>('neutral');
@@ -44,41 +42,50 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
 
   const fetchEntries = async () => {
     setIsLoading(true);
-    // Local persistence fallback if Supabase is not connected
+    // Always load local data first to ensure availability
     const saved = localStorage.getItem(`journal_${currentUserId}`);
     if (saved) {
       setEntries(JSON.parse(saved));
     }
 
     if (supabase) {
-      const { data, error } = await supabase
-        .from('journal_entries')
-        .select('*')
-        .eq('user_id', currentUserId)
-        .order('created_at', { ascending: false });
+      try {
+        const { data, error } = await supabase
+            .from('journal_entries')
+            .select('*')
+            .eq('user_id', currentUserId)
+            .order('created_at', { ascending: false });
 
-      if (data && !error) {
-        const mapped: JournalEntry[] = data.map((e: any) => ({
-          id: e.id,
-          userId: e.user_id,
-          title: e.title,
-          content: e.content,
-          images: e.images || [],
-          mood: e.mood || 'neutral',
-          createdAt: new Date(e.created_at).getTime()
-        }));
-        setEntries(mapped);
+        if (error) {
+            // Check for table missing error (PGRST205 usually or 42P01)
+            // If error, we rely on local storage loaded above
+            console.warn("Could not fetch from backend (offline or schema mismatch):", error.message);
+        } else if (data) {
+            const mapped: JournalEntry[] = data.map((e: any) => ({
+            id: e.id,
+            userId: e.user_id,
+            title: e.title,
+            content: e.content,
+            images: e.images || [],
+            mood: e.mood || 'neutral',
+            createdAt: new Date(e.created_at).getTime()
+            }));
+            // If backend is active, it overrides local (or we could merge, but override is simpler for sync)
+            if (mapped.length > 0) {
+                setEntries(mapped);
+            }
+        }
+      } catch (e) {
+        console.warn("Unexpected backend error, using local data.");
       }
     }
     setIsLoading(false);
   };
 
-  // Sync to local storage for redundancy
   useEffect(() => {
     localStorage.setItem(`journal_${currentUserId}`, JSON.stringify(entries));
   }, [entries, currentUserId]);
 
-  // XP Calculation based on User Profile (Global)
   const xpPercentage = userProfile.nextLevelXP > 0 
     ? Math.min(100, Math.round((userProfile.currentXP / userProfile.nextLevelXP) * 100)) 
     : 0;
@@ -87,8 +94,8 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
     setIsEditorOpen(true);
     setIsNewEntry(true);
     setSelectedEntry(null);
+    setSaveError(null);
     
-    // Reset form
     setEditTitle('');
     setEditContent('');
     setEditMood('neutral');
@@ -99,8 +106,8 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
     setSelectedEntry(entry);
     setIsEditorOpen(true);
     setIsNewEntry(false);
+    setSaveError(null);
     
-    // Populate form
     setEditTitle(entry.title);
     setEditContent(entry.content);
     setEditMood(entry.mood);
@@ -111,21 +118,19 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
     setSelectedEntry(entry);
     setIsEditorOpen(false);
     setIsNewEntry(false);
+    setSaveError(null);
   };
 
   const handleSave = async () => {
     if (isSaving || !editTitle.trim()) return;
     setIsSaving(true);
+    setSaveError(null);
 
     try {
         const timestamp = Date.now();
-        // Determine ID: If new, generate. If editing, use existing.
-        // Safety: If !isNewEntry and selectedEntry is null, something is wrong
         const idToUse = isNewEntry ? crypto.randomUUID() : selectedEntry?.id;
         if (!isNewEntry && !idToUse) {
-             console.error("Attempted to update null entry");
-             setIsSaving(false);
-             return; 
+             throw new Error("Missing ID for update");
         }
 
         const finalId = idToUse || crypto.randomUUID();
@@ -136,13 +141,13 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
             title: editTitle,
             content: editContent,
             mood: editMood,
-            images: [...editImages], // Copy array
+            images: [...editImages],
             createdAt: isNewEntry ? timestamp : (selectedEntry?.createdAt || timestamp)
         };
 
+        // Optimistic update
         if (isNewEntry) {
             setEntries(prev => [newEntry, ...prev]);
-            // Only award XP if it is genuinely a new entry
             onXPGain(150);
         } else {
             setEntries(prev => prev.map(e => e.id === newEntry.id ? newEntry : e));
@@ -151,7 +156,6 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
         setSelectedEntry(newEntry);
         setIsEditorOpen(false);
 
-        // Supabase Sync
         if (supabase) {
              const payload = {
                 id: newEntry.id,
@@ -162,20 +166,33 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
                 images: newEntry.images,
              };
 
-             if (isNewEntry) {
-                 await supabase.from('journal_entries').insert([{
-                    ...payload,
-                    created_at: new Date(newEntry.createdAt).toISOString()
-                 }]);
-             } else {
-                 await supabase.from('journal_entries').update(payload).eq('id', newEntry.id);
+             let error;
+             try {
+                if (isNewEntry) {
+                    const { error: insertError } = await supabase.from('journal_entries').insert([{
+                        ...payload,
+                        created_at: new Date(newEntry.createdAt).toISOString()
+                    }]);
+                    error = insertError;
+                } else {
+                    const { error: updateError } = await supabase.from('journal_entries').update(payload).eq('id', newEntry.id);
+                    error = updateError;
+                }
+             } catch(e) {
+                 error = e;
+             }
+
+             if (error) {
+                // We do not setSaveError here to alert the user because the data IS saved locally.
+                // We just log it.
+                console.warn("Saved to local storage only (Backend Error):", error);
              }
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error("Save failed", e);
+        setSaveError(e.message || "Unknown error occurred while saving.");
     } finally {
         setIsSaving(false);
-        // Important: Reset the New Entry flag to prevent future XP gain on edits
         setIsNewEntry(false); 
     }
   };
@@ -188,7 +205,11 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
       setIsEditorOpen(false);
     }
     if (supabase) {
-      await supabase.from('journal_entries').delete().eq('id', id);
+      try {
+        await supabase.from('journal_entries').delete().eq('id', id);
+      } catch(e) {
+        // ignore
+      }
     }
   };
 
@@ -223,7 +244,6 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
     e.content.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Editor View
   const renderEditor = () => (
     <div className="flex flex-col h-full animate-fade-in">
       <div className="flex justify-between items-center mb-6">
@@ -232,9 +252,9 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
           <button 
              onClick={() => {
                  setIsEditorOpen(false);
-                 // If we were creating new, go back to nothing or list
                  if(isNewEntry) setSelectedEntry(null);
                  setIsNewEntry(false);
+                 setSaveError(null);
              }}
              className="px-4 py-2 rounded-full text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
           >
@@ -250,9 +270,15 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
           </button>
         </div>
       </div>
+      
+      {saveError && (
+        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-2 text-red-400 text-xs">
+           <AlertTriangle size={14} />
+           <span>{saveError}</span>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto custom-scrollbar space-y-6">
-        {/* Title & Mood */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
            <div className="md:col-span-2">
               <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block">Subject</label>
@@ -278,7 +304,6 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
            </div>
         </div>
 
-        {/* Content */}
         <div>
            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block">Log Content</label>
            <textarea 
@@ -289,7 +314,6 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
            />
         </div>
 
-        {/* Image Upload */}
         <div>
            <div className="flex items-center justify-between mb-3">
               <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block">Visual Evidence <span className="text-gray-600 normal-case font-normal">(Max 2)</span></label>
@@ -332,7 +356,6 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden animate-fade-in-up relative">
       
-      {/* Image Preview Modal */}
       {previewImage && (
         <div 
             className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-8 backdrop-blur-sm cursor-zoom-out"
@@ -349,7 +372,6 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
           <p className="text-gray-400 text-sm mt-1">Track your journey, reflect on progress, and document victories.</p>
         </div>
 
-        {/* Global XP Progress Bar in Journal */}
         <div className="flex flex-col gap-2 w-64">
            <div className="flex justify-between items-center text-xs font-medium">
               <div className="flex items-center gap-1.5 text-brand-primary">
@@ -369,9 +391,7 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
 
       <div className="flex-1 flex overflow-hidden px-8 pb-8 gap-6">
         
-        {/* LEFT PANE: List */}
         <div className="w-1/3 min-w-[300px] flex flex-col glass-panel rounded-2xl border border-white/5 overflow-hidden">
-           {/* Search & Add */}
            <div className="p-4 border-b border-white/5 space-y-4">
               <div className="relative">
                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -391,7 +411,6 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
               </button>
            </div>
 
-           {/* List Entries */}
            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
               {filteredEntries.length === 0 ? (
                  <div className="text-center py-10 text-gray-600 text-xs italic">
@@ -430,12 +449,10 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
            </div>
         </div>
 
-        {/* RIGHT PANE: Editor / Detail */}
         <div className="flex-1 glass-panel rounded-2xl border border-white/5 p-8 relative overflow-hidden flex flex-col">
            {isEditorOpen ? (
               renderEditor()
            ) : selectedEntry ? (
-              // READ VIEW
               <div className="flex flex-col h-full animate-fade-in">
                  <div className="flex justify-between items-start mb-6">
                     <div>
@@ -499,7 +516,6 @@ export const JournalView: React.FC<JournalViewProps> = ({ currentUserId, userPro
                  </div>
               </div>
            ) : (
-              // EMPTY STATE
               <div className="flex-1 flex flex-col items-center justify-center text-center">
                  <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mb-6">
                     <Book size={32} className="text-gray-600" />

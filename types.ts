@@ -13,6 +13,7 @@ export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Critical';
 
 export interface Task {
   id: string;
+  userId?: string;
   listId?: string;
   title: string;
   completed: boolean;
