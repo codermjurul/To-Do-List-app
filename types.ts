@@ -1,6 +1,18 @@
 
 export type ViewType = 'tasks' | 'progress' | 'streaks' | 'journal' | 'settings';
 
+export interface Goal {
+  id: string;
+  userId: string;
+  title: string;
+  currentValue: number;
+  targetValue: number;
+  unit: string;
+  isCompleted: boolean;
+  xpReward: number;
+  createdAt: number;
+}
+
 export interface TaskList {
   id: string;
   name: string;
@@ -24,12 +36,6 @@ export interface Task {
   duration?: number; // duration in minutes
 }
 
-export interface ListGroup {
-  id: string;
-  name: string;
-  count: number;
-}
-
 export interface TimerState {
   isActive: boolean;
   isPaused: boolean;
@@ -42,9 +48,9 @@ export interface TimerState {
 export interface SessionState {
   isActive: boolean;
   isPaused: boolean;
-  startTime: number | null; // Timestamp of the last start/resume
-  accumulatedSeconds: number; // Seconds from previous segments before the current pause
-  elapsedSeconds: number; // Total displayed time
+  startTime: number | null;
+  accumulatedSeconds: number;
+  elapsedSeconds: number;
   sessionId: string | null;
 }
 
@@ -58,12 +64,12 @@ export interface SessionRecord {
 
 export interface UserProfile {
   name: string;
-  avatarUrl: string; // Base64 or URL
+  avatarUrl: string;
   gamerTag: string;
   level: number;
   currentXP: number;
   nextLevelXP: number;
-  zoom: number; // For image cropping/adjustment
+  zoom: number;
   stats?: {
     totalHours: number;
     totalTasksCompleted: number;
@@ -75,7 +81,7 @@ export interface JournalEntry {
   userId: string;
   title: string;
   content: string;
-  images: string[]; // Base64 strings or URLs
+  images: string[];
   mood: 'focus' | 'success' | 'failure' | 'neutral' | 'idea';
   createdAt: number;
 }

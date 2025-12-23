@@ -8,7 +8,7 @@ import { JournalView } from './components/JournalView';
 import { SettingsView } from './components/SettingsView';
 import { ProgressView } from './components/ProgressView';
 import { LevelUpModal } from './components/LevelUpModal';
-import { Task, ViewType, TimerState, UserProfile, AppSettings, TaskList, AppTheme, SessionState, TaskPriority, SessionRecord } from './types';
+import { Task, ViewType, TimerState, UserProfile, AppSettings, TaskList, AppTheme, SessionState, TaskPriority, SessionRecord, Goal } from './types';
 import { supabase } from './lib/supabase';
 import { AlertTriangle } from 'lucide-react';
 import { calculateTaskXP } from './lib/xpSystem';
@@ -52,6 +52,11 @@ export default function App() {
 
   const [tasks, setTasks] = useState<Task[]>(() => {
     const saved = localStorage.getItem('agency_hud_tasks');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [goals, setGoals] = useState<Goal[]>(() => {
+    const saved = localStorage.getItem('agency_hud_goals');
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -131,15 +136,15 @@ export default function App() {
   }, [appSettings.theme]);
 
   useEffect(() => {
-    localStorage.setItem('agency_hud_lists', JSON.stringify(taskLists));
-  }, [taskLists]);
+    localStorage.setItem('agency_hud_goals', JSON.stringify(goals));
+  }, [goals]);
 
   useEffect(() => {
     localStorage.setItem('agency_hud_tasks', JSON.stringify(tasks));
   }, [tasks]);
 
   useEffect(() => {
-    const loadProfileAndStats = async () => {
+    const loadData = async () => {
       if (supabase) {
         try {
           const { data: profileData } = await supabase
@@ -152,7 +157,26 @@ export default function App() {
             .from('sessions')
             .select('*')
             .eq('user_id', deviceId);
+
+          const { data: goalsData } = await supabase
+            .from('goals')
+            .select('*')
+            .eq('user_id', deviceId);
           
+          if (goalsData) {
+            setGoals(goalsData.map((g: any) => ({
+              id: g.id,
+              userId: g.user_id,
+              title: g.title,
+              currentValue: g.current_value,
+              targetValue: g.target_value,
+              unit: g.unit,
+              isCompleted: g.is_completed,
+              xpReward: g.xp_reward,
+              createdAt: new Date(g.created_at).getTime()
+            })));
+          }
+
           if (sessionData) {
              setSessions(sessionData as SessionRecord[]);
           }
@@ -181,7 +205,7 @@ export default function App() {
         }
       }
     };
-    loadProfileAndStats();
+    loadData();
   }, [deviceId]);
 
   useEffect(() => {
@@ -211,15 +235,6 @@ export default function App() {
     return () => clearTimeout(timeoutId);
   }, [userProfile, deviceId]);
 
-  useEffect(() => {
-    localStorage.setItem('agency_hud_settings', JSON.stringify(appSettings));
-  }, [appSettings]);
-
-  useEffect(() => {
-    fetchTasks();
-  }, []);
-
-  // DELTA-BASED TIMER LOGIC
   useEffect(() => {
     if (sessionState.isActive && !sessionState.isPaused && sessionState.startTime) {
       sessionTimerRef.current = window.setInterval(() => {
@@ -259,7 +274,7 @@ export default function App() {
           started_at: new Date(startTime).toISOString(),
         }]);
       } catch (e) {
-        console.warn("Session logging backend fail");
+        console.warn("Session logging fail");
       }
     }
   };
@@ -268,14 +283,8 @@ export default function App() {
     setSessionState(prev => {
       if (!prev.isActive) return prev;
       if (prev.isPaused) {
-        // Resuming: Set a new startTime
-        return {
-          ...prev,
-          isPaused: false,
-          startTime: Date.now()
-        };
+        return { ...prev, isPaused: false, startTime: Date.now() };
       } else {
-        // Pausing: Calculate the time passed in this segment and add to accumulated
         const now = Date.now();
         const delta = prev.startTime ? Math.floor((now - prev.startTime) / 1000) : 0;
         return {
@@ -355,35 +364,63 @@ export default function App() {
     });
   };
 
-  const handleXPLoss = (amount: number) => {
-    setUserProfile(prev => ({
-      ...prev,
-      currentXP: Math.max(0, prev.currentXP - amount)
-    }));
+  const handleCreateGoal = async (title: string, target: number, unit: string) => {
+    const newGoal: Goal = {
+      id: crypto.randomUUID(),
+      userId: deviceId,
+      title,
+      currentValue: 0,
+      targetValue: target,
+      unit,
+      isCompleted: false,
+      xpReward: Math.floor(target * 10), // Gamified reward logic
+      createdAt: Date.now()
+    };
+    setGoals(prev => [newGoal, ...prev]);
+
+    if (supabase) {
+      await supabase.from('goals').insert([{
+        id: newGoal.id,
+        user_id: deviceId,
+        title: newGoal.title,
+        current_value: 0,
+        target_value: newGoal.targetValue,
+        unit: newGoal.unit,
+        xp_reward: newGoal.xpReward
+      }]);
+    }
   };
 
-  const handleResetLevel = () => {
-     setUserProfile(prev => ({
-        ...prev,
-        level: 1,
-        currentXP: 0,
-        nextLevelXP: 1000
-     }));
+  const handleUpdateGoal = async (id: string, newValue: number) => {
+    const goal = goals.find(g => g.id === id);
+    if (!goal) return;
+    
+    const isCompleted = newValue >= goal.targetValue;
+    const wasCompleted = goal.isCompleted;
+
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, currentValue: newValue, isCompleted } : g));
+
+    if (isCompleted && !wasCompleted) {
+      handleXPGain(goal.xpReward);
+    }
+
+    if (supabase) {
+      await supabase.from('goals').update({
+        current_value: newValue,
+        is_completed: isCompleted
+      }).eq('id', id);
+    }
   };
 
-  const handleResetStreaks = () => {
-     setAppSettings(prev => ({
-        ...prev,
-        streakStartTimestamp: Date.now()
-     }));
+  const handleDeleteGoal = async (id: string) => {
+    setGoals(prev => prev.filter(g => g.id !== id));
+    if (supabase) {
+      await supabase.from('goals').delete().eq('id', id);
+    }
   };
 
   const fetchTasks = async () => {
-    if (!supabase) {
-      setIsLoading(false);
-      return;
-    }
-
+    if (!supabase) return;
     try {
       const { data, error } = await supabase
         .from('tasks')
@@ -391,9 +428,7 @@ export default function App() {
         .eq('user_id', deviceId)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.warn("Backend sync issue (Tasks):", error.message);
-      } else if (data) {
+      if (data) {
         const mappedTasks: Task[] = data.map((t: any) => ({
           id: t.id,
           userId: t.user_id,
@@ -406,15 +441,10 @@ export default function App() {
           duration: t.duration_minutes || null,
           listId: t.list_id || 'daily'
         }));
-        
-        if (mappedTasks.length > 0) {
-            setTasks(mappedTasks);
-        }
+        setTasks(mappedTasks);
       }
     } catch (err) {
-      console.warn('Network error fetching tasks');
-    } finally {
-      setIsLoading(false);
+      console.warn('Task fetch error');
     }
   };
 
@@ -436,37 +466,17 @@ export default function App() {
     
     setTasks(prev => [tempTask, ...prev]);
 
-    if (!supabase) return;
-
-    try {
-        const payload: any = { 
+    if (supabase) {
+        await supabase.from('tasks').insert([{ 
             id: tempId,
             user_id: deviceId,
             list_id: listId,
             title, 
             completed: false, 
-            priority: priority,
+            priority,
             xp_worth: calculatedXP,
             duration_minutes: durationMinutes
-        };
-        
-        const { data, error } = await supabase
-        .from('tasks')
-        .insert([payload])
-        .select()
-        .single();
-
-        if (error) {
-            console.warn("Backend save fail:", error.message);
-        } else if (data) {
-            setTasks(prev => prev.map(t => t.id === tempId ? {
-                ...t,
-                id: data.id,
-                timestamp: new Date(data.created_at).getTime()
-            } : t));
-        }
-    } catch (e) {
-        console.warn("Backend error", e);
+        }]);
     }
   };
 
@@ -474,70 +484,33 @@ export default function App() {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
     const newStatus = !task.completed;
-    const completedAt = newStatus ? Date.now() : undefined;
     
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: newStatus, completedAt } : t));
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: newStatus, completedAt: newStatus ? Date.now() : undefined } : t));
 
     if (newStatus) {
        handleXPGain(task.xpWorth || 10);
        setUserProfile(prev => ({
          ...prev,
-         stats: {
-           ...prev.stats!,
-           totalTasksCompleted: (prev.stats?.totalTasksCompleted || 0) + 1
-         }
+         stats: { ...prev.stats!, totalTasksCompleted: (prev.stats?.totalTasksCompleted || 0) + 1 }
        }));
     } else {
-        handleXPLoss(task.xpWorth || 10);
         setUserProfile(prev => ({
          ...prev,
-         stats: {
-           ...prev.stats!,
-           totalTasksCompleted: Math.max(0, (prev.stats?.totalTasksCompleted || 0) - 1)
-         }
+         stats: { ...prev.stats!, totalTasksCompleted: Math.max(0, (prev.stats?.totalTasksCompleted || 0) - 1) }
        }));
     }
 
-    if (!supabase) return;
-    
-    try {
-        const updatePayload: any = { completed: newStatus };
-        if (newStatus) updatePayload.completed_at = new Date().toISOString();
-        else updatePayload.completed_at = null;
-        
-        await supabase.from('tasks').update(updatePayload).eq('id', id);
-    } catch(e) {
-        console.warn("Backend update fail");
+    if (supabase) {
+        await supabase.from('tasks').update({ 
+            completed: newStatus, 
+            completed_at: newStatus ? new Date().toISOString() : null 
+        }).eq('id', id);
     }
   };
 
   const handleDeleteTask = async (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
-    if (!supabase) return;
-    try {
-        await supabase.from('tasks').delete().eq('id', id);
-    } catch(e) {
-        console.warn("Delete backend fail");
-    }
-  };
-
-  const handleUpdateList = (id: string, newName: string, newDesc?: string, newIcon?: string) => {
-    setTaskLists(prev => prev.map(l => l.id === id ? { 
-      ...l, 
-      name: newName,
-      description: newDesc !== undefined ? newDesc : l.description,
-      icon: newIcon !== undefined ? newIcon : l.icon
-    } : l));
-  };
-
-  const handleCreateList = (name: string, description: string, icon: string) => {
-    const newList: TaskList = {
-      id: crypto.randomUUID(),
-      name,
-      description,
-      icon
-    };
-    setTaskLists(prev => [...prev, newList]);
+    if (supabase) await supabase.from('tasks').delete().eq('id', id);
   };
 
   const listStats = useMemo(() => {
@@ -547,9 +520,7 @@ export default function App() {
 
     return tasks.reduce((acc, t) => {
       const listId = t.listId || 'daily';
-      if (!acc[listId]) {
-        acc[listId] = { total: 0, completed: 0 };
-      }
+      if (!acc[listId]) acc[listId] = { total: 0, completed: 0 };
       
       const isDailyList = listId === 'daily' || listId.includes('daily');
       const taskDate = new Date(t.timestamp);
@@ -557,7 +528,6 @@ export default function App() {
       const isTaskFromToday = taskDate.getTime() === todayTs;
 
       if (isDailyList) {
-        // Only count if created today to allow reset next day
         if (isTaskFromToday) {
             acc[listId].total++;
             if (t.completed) acc[listId].completed++;
@@ -572,12 +542,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden font-sans text-gray-100 selection:bg-brand-primary/30 selection:text-white relative">
-      {showLevelUpModal && (
-        <LevelUpModal 
-          newLevel={userProfile.level} 
-          onClose={() => setShowLevelUpModal(false)} 
-        />
-      )}
+      {showLevelUpModal && <LevelUpModal newLevel={userProfile.level} onClose={() => setShowLevelUpModal(false)} />}
 
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-white/[0.02] rounded-full blur-[120px]"></div>
@@ -593,12 +558,7 @@ export default function App() {
 
       <Sidebar 
         currentView={currentView} 
-        onViewChange={(view) => {
-          setCurrentView(view);
-          if (view !== 'tasks') {
-            setActiveListId(null);
-          }
-        }}
+        onViewChange={(view) => { setCurrentView(view); if (view !== 'tasks') setActiveListId(null); }}
         userProfile={userProfile}
         appSettings={appSettings}
         sessionState={sessionState}
@@ -613,8 +573,8 @@ export default function App() {
             <TasksEntry 
               taskLists={taskLists}
               onSelect={setActiveListId}
-              onUpdateList={handleUpdateList}
-              onCreateList={handleCreateList}
+              onUpdateList={(id, n, d, i) => setTaskLists(prev => prev.map(l => l.id === id ? { ...l, name: n, description: d, icon: i } : l))}
+              onCreateList={(n, d, i) => setTaskLists(prev => [...prev, { id: crypto.randomUUID(), name: n, description: d, icon: i }])}
               listStats={listStats}
             />
           ) : (
@@ -632,30 +592,25 @@ export default function App() {
           )
         )}
 
-        {currentView === 'progress' && <ProgressView tasks={tasks} />}
-        {currentView === 'streaks' && (
-          <StreaksView 
-            tasks={tasks} 
-            timezone={appSettings.timezone} 
-            sessions={sessions}
-            streakStartTimestamp={appSettings.streakStartTimestamp}
+        {currentView === 'progress' && (
+          <ProgressView 
+            goals={goals} 
+            onCreateGoal={handleCreateGoal} 
+            onUpdateGoal={handleUpdateGoal} 
+            onDeleteGoal={handleDeleteGoal} 
           />
         )}
-        {currentView === 'journal' && (
-          <JournalView 
-            currentUserId={deviceId} 
-            userProfile={userProfile}
-            onXPGain={handleXPGain}
-          />
-        )}
+        
+        {currentView === 'streaks' && <StreaksView tasks={tasks} timezone={appSettings.timezone} sessions={sessions} />}
+        {currentView === 'journal' && <JournalView currentUserId={deviceId} userProfile={userProfile} onXPGain={handleXPGain} />}
         {currentView === 'settings' && (
           <SettingsView 
             userProfile={userProfile}
             appSettings={appSettings}
             onUpdateProfile={setUserProfile}
             onUpdateAppSettings={setAppSettings}
-            onResetLevel={handleResetLevel}
-            onResetStreaks={handleResetStreaks}
+            onResetLevel={() => setUserProfile(prev => ({ ...prev, level: 1, currentXP: 0, nextLevelXP: 1000 }))}
+            onResetStreaks={() => setAppSettings(prev => ({ ...prev, streakStartTimestamp: Date.now() }))}
           />
         )}
       </main>
