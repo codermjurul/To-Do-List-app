@@ -10,7 +10,7 @@ import { ProgressView } from './components/ProgressView';
 import { LevelUpModal } from './components/LevelUpModal';
 import { Task, ViewType, TimerState, UserProfile, AppSettings, TaskList, AppTheme, SessionState, TaskPriority, SessionRecord, Goal } from './types';
 import { supabase } from './lib/supabase';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Zap } from 'lucide-react';
 import { calculateTaskXP } from './lib/xpSystem';
 
 const getDeviceId = () => {
@@ -61,9 +61,9 @@ export default function App() {
   });
 
   const [currentView, setCurrentView] = useState<ViewType>('tasks');
-  const [isLoading, setIsLoading] = useState(true);
   const [showLevelUpModal, setShowLevelUpModal] = useState(false);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [sessionXPToast, setSessionXPToast] = useState<{show: boolean, amount: number}>({show: false, amount: 0});
 
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [taskLists, setTaskLists] = useState<TaskList[]>(() => {
@@ -136,14 +136,6 @@ export default function App() {
   }, [appSettings.theme]);
 
   useEffect(() => {
-    localStorage.setItem('agency_hud_goals', JSON.stringify(goals));
-  }, [goals]);
-
-  useEffect(() => {
-    localStorage.setItem('agency_hud_tasks', JSON.stringify(tasks));
-  }, [tasks]);
-
-  useEffect(() => {
     const loadData = async () => {
       if (supabase) {
         try {
@@ -201,39 +193,12 @@ export default function App() {
             }));
           }
         } catch (err) {
-          console.warn("Error loading remote stats, using local:", err);
+          console.warn("Error loading data from cloud:", err);
         }
       }
     };
     loadData();
   }, [deviceId]);
-
-  useEffect(() => {
-    localStorage.setItem('agency_hud_profile', JSON.stringify(userProfile));
-    
-    const saveProfile = async () => {
-      if (!supabase) return;
-      try {
-        await supabase.from('profiles').upsert({
-          id: deviceId,
-          name: userProfile.name,
-          avatar_url: userProfile.avatarUrl,
-          gamer_tag: userProfile.gamerTag,
-          level: userProfile.level,
-          current_xp: userProfile.currentXP,
-          next_level_xp: userProfile.nextLevelXP,
-          zoom: userProfile.zoom,
-          total_tasks_completed: userProfile.stats?.totalTasksCompleted || 0,
-          updated_at: new Date().toISOString()
-        });
-      } catch (err) {
-        console.warn("Profile sync failed");
-      }
-    };
-    
-    const timeoutId = setTimeout(saveProfile, 2000);
-    return () => clearTimeout(timeoutId);
-  }, [userProfile, deviceId]);
 
   useEffect(() => {
     if (sessionState.isActive && !sessionState.isPaused && sessionState.startTime) {
@@ -274,7 +239,7 @@ export default function App() {
           started_at: new Date(startTime).toISOString(),
         }]);
       } catch (e) {
-        console.warn("Session logging fail");
+        console.warn("Session start logging fail");
       }
     }
   };
@@ -303,10 +268,18 @@ export default function App() {
     const lastDelta = sessionState.startTime ? Math.floor((now - sessionState.startTime) / 1000) : 0;
     const totalDuration = sessionState.accumulatedSeconds + lastDelta;
     
+    // XP Logic for Sessions: 10 XP per minute
+    const sessionXP = Math.max(0, Math.floor(totalDuration / 60) * 10);
+    if (sessionXP > 0) {
+      handleXPGain(sessionXP);
+      setSessionXPToast({show: true, amount: sessionXP});
+      setTimeout(() => setSessionXPToast({show: false, amount: 0}), 4000);
+    }
+    
     const newSessionRecord: SessionRecord = {
        id: sessionState.sessionId || crypto.randomUUID(),
        user_id: deviceId,
-       started_at: new Date(sessionState.startTime || Date.now()).toISOString(),
+       started_at: new Date(sessionState.startTime || Date.now() - (totalDuration * 1000)).toISOString(),
        ended_at: new Date().toISOString(),
        duration_seconds: totalDuration
     };
@@ -364,7 +337,9 @@ export default function App() {
     });
   };
 
-  const handleCreateGoal = async (title: string, target: number, unit: string) => {
+  const handleCreateGoal = async (title: string, target: number, unit: string, customXP?: number) => {
+    const xpRewardValue = customXP !== undefined ? customXP : Math.floor(target * 10);
+    
     const newGoal: Goal = {
       id: crypto.randomUUID(),
       userId: deviceId,
@@ -373,7 +348,7 @@ export default function App() {
       targetValue: target,
       unit,
       isCompleted: false,
-      xpReward: Math.floor(target * 10), // Gamified reward logic
+      xpReward: xpRewardValue,
       createdAt: Date.now()
     };
     setGoals(prev => [newGoal, ...prev]);
@@ -416,35 +391,6 @@ export default function App() {
     setGoals(prev => prev.filter(g => g.id !== id));
     if (supabase) {
       await supabase.from('goals').delete().eq('id', id);
-    }
-  };
-
-  const fetchTasks = async () => {
-    if (!supabase) return;
-    try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', deviceId)
-        .order('created_at', { ascending: false });
-
-      if (data) {
-        const mappedTasks: Task[] = data.map((t: any) => ({
-          id: t.id,
-          userId: t.user_id,
-          title: t.title,
-          completed: t.completed,
-          priority: t.priority || 'Medium',
-          xpWorth: t.xp_worth || 10,
-          timestamp: new Date(t.created_at).getTime(),
-          completedAt: t.completed_at ? new Date(t.completed_at).getTime() : undefined,
-          duration: t.duration_minutes || null,
-          listId: t.list_id || 'daily'
-        }));
-        setTasks(mappedTasks);
-      }
-    } catch (err) {
-      console.warn('Task fetch error');
     }
   };
 
@@ -540,9 +486,36 @@ export default function App() {
     }, {} as Record<string, { total: number; completed: number }>);
   }, [tasks]);
 
+  const handleFullReset = async () => {
+    // 1. Wipe Local Identity entirely
+    localStorage.removeItem('agency_hud_device_id');
+    localStorage.removeItem('agency_hud_profile');
+    localStorage.removeItem('agency_hud_tasks');
+    localStorage.removeItem('agency_hud_goals');
+    localStorage.removeItem('agency_hud_settings');
+    
+    // 2. Refresh the page to generate a brand new device ID
+    window.location.reload();
+  };
+
   return (
     <div className="flex h-screen overflow-hidden font-sans text-gray-100 selection:bg-brand-primary/30 selection:text-white relative">
       {showLevelUpModal && <LevelUpModal newLevel={userProfile.level} onClose={() => setShowLevelUpModal(false)} />}
+      
+      {/* XP Session Toast Animation */}
+      {sessionXPToast.show && (
+        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[100] animate-fade-in-up">
+           <div className="bg-[#151921] border border-brand-primary/40 rounded-full px-6 py-3 flex items-center gap-3 shadow-[0_0_40px_rgba(204,255,0,0.2)] backdrop-blur-xl">
+              <div className="w-8 h-8 rounded-full bg-brand-primary flex items-center justify-center shadow-lg">
+                <Zap size={16} className="text-black fill-black" />
+              </div>
+              <div className="flex flex-col">
+                 <span className="text-xs font-bold text-brand-primary uppercase tracking-widest leading-none mb-1">Focus Rewards</span>
+                 <span className="text-xl font-black text-white leading-none">+{sessionXPToast.amount} XP Boosted</span>
+              </div>
+           </div>
+        </div>
+      )}
 
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-white/[0.02] rounded-full blur-[120px]"></div>
@@ -609,7 +582,7 @@ export default function App() {
             appSettings={appSettings}
             onUpdateProfile={setUserProfile}
             onUpdateAppSettings={setAppSettings}
-            onResetLevel={() => setUserProfile(prev => ({ ...prev, level: 1, currentXP: 0, nextLevelXP: 1000 }))}
+            onResetLevel={handleFullReset}
             onResetStreaks={() => setAppSettings(prev => ({ ...prev, streakStartTimestamp: Date.now() }))}
           />
         )}

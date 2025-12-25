@@ -5,7 +5,7 @@ import { Target, Plus, Zap, Trash2, CheckCircle, ChevronRight, Award, PlusCircle
 
 interface ProgressViewProps {
   goals: Goal[];
-  onCreateGoal: (title: string, target: number, unit: string) => void;
+  onCreateGoal: (title: string, target: number, unit: string, customXP: number) => void;
   onUpdateGoal: (id: string, newValue: number) => void;
   onDeleteGoal: (id: string) => void;
 }
@@ -15,16 +15,24 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ goals, onCreateGoal,
   const [newTitle, setNewTitle] = useState('');
   const [newTarget, setNewTarget] = useState<number>(10);
   const [newUnit, setNewUnit] = useState('Videos');
+  const [newXPReward, setNewXPReward] = useState<number>(100);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (newTitle.trim() && newTarget > 0) {
-      onCreateGoal(newTitle.trim(), newTarget, newUnit.trim());
+      onCreateGoal(newTitle.trim(), newTarget, newUnit.trim(), newXPReward);
       setIsModalOpen(false);
       setNewTitle('');
       setNewTarget(10);
       setNewUnit('Videos');
+      setNewXPReward(100);
     }
+  };
+
+  // Sync default XP reward whenever target changes, but allow manual edit
+  const handleTargetChange = (val: number) => {
+    setNewTarget(val);
+    setNewXPReward(val * 10);
   };
 
   return (
@@ -97,7 +105,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ goals, onCreateGoal,
                     <input 
                       type="number" 
                       value={newTarget}
-                      onChange={(e) => setNewTarget(parseInt(e.target.value) || 0)}
+                      onChange={(e) => handleTargetChange(parseInt(e.target.value) || 0)}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-brand-primary/50 outline-none transition-colors"
                     />
                   </div>
@@ -113,12 +121,19 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ goals, onCreateGoal,
                   </div>
                 </div>
 
-                <div className="bg-brand-primary/5 p-4 rounded-xl border border-brand-primary/10 flex items-center gap-3">
-                   <Zap className="text-brand-primary" size={20} />
-                   <div>
-                      <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Completion Reward</p>
-                      <p className="text-sm font-bold text-brand-primary">{Math.floor(newTarget * 10)} XP Points</p>
+                <div>
+                   <label className="text-xs font-bold text-brand-primary uppercase tracking-widest mb-2 block">Completion Reward (XP)</label>
+                   <div className="flex items-center gap-3 bg-brand-primary/5 p-2 rounded-xl border border-brand-primary/10">
+                      <Zap className="text-brand-primary ml-2" size={20} />
+                      <input 
+                        type="number" 
+                        value={newXPReward}
+                        onChange={(e) => setNewXPReward(parseInt(e.target.value) || 0)}
+                        className="flex-1 bg-transparent border-none text-brand-primary text-xl font-black focus:outline-none placeholder-brand-primary/30"
+                        placeholder="XP Amount"
+                      />
                    </div>
+                   <p className="text-[10px] text-gray-600 mt-2 italic px-1">Adjust this value to match the mission's difficulty.</p>
                 </div>
 
                 <button 
